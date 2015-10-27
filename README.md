@@ -1,7 +1,7 @@
-MC-CBN: Monte Carlo EM for large-scale inference of conjunctive Bayesian networks
+#MC-CBN
 ======
 
-MC-CBN performs an efficient large-scale inference of the continuous time conjunctive Bayesian network (CBN).
+MC-CBN performs an efficient large-scale inference of the continuous time conjunctive Bayesian network (CBN). MC-CBN uses Monte Carlo expectation-maximization algorithm for inference of the CBN model.
 
 
 ###Contact
