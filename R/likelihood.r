@@ -17,7 +17,7 @@ compute_geno_indexes <- function(obs_events, poset) {
 
 
 log_observed_geno_probs <- function(lambdas, obs_events, dtimes, G, geno_indexes) {
-  times = dtimes$times
+  sampling_times = dtimes$times
   t_indexes = dtimes$t_indexes
   all_times = dtimes$all_times
   if(length(lambdas) == 1) {
@@ -36,7 +36,7 @@ log_observed_geno_probs <- function(lambdas, obs_events, dtimes, G, geno_indexes
   
   # computing the genotype probabilities for all time points (and all possible genotypes). The return value
   # is a matrix 
-  geno_probs = probs(lambdas, G, times)
+  geno_probs = probs(lambdas, G, sampling_times)
   
   # computing the genotype probabilities for all time points only for  the observed genotypes. The return value
   # is a vector
@@ -60,13 +60,13 @@ likelihood <- function(lambdas, obs_events, dtimes, G, geno_indexes, ll_control=
 #####################################  add error modeling
 log_observed_geno_probs_with_eps<- function(lambda, eps, obs_events, dtimes, G) {
   obs_events = as.matrix(obs_events, ncol=length(lambda))
-  times = dtimes$times
+  sampling_times = dtimes$times
   t_indexes = dtimes$t_indexes
   all_times = dtimes$all_times
   
   # computing the genotype probabilities for all time points (and all possible genotypes). The return value
   # is a matrix 
-  geno_probs = probs(lambda, G, times)
+  geno_probs = probs(lambda, G, sampling_times)
   #   range(geno_probs)
   prob_Y = rep(0, nrow(obs_events))
   for( i in 1:nrow(obs_events)) {
@@ -110,27 +110,6 @@ prob_hamming_distance <- function(X, Y, eps) {
 }
 
 
-# 
-# # C : nr of compatible genotypes
-# loglikelihood_cbn <- function(poset, compatible_ll, C, N){
-#   p = ncol(poset)
-#   lattice_size = orderIdeals(poset)$lattice_size
-#   
-#   # fraction of the genotypes that are compatible with the given poset
-#   alpha = C /N
-#   
-#   q_e = 1/(2^p - lattice_size  )
-#   
-#   incompatible_ll = 0.0
-#   if((N-C) > 0)
-#     incompatible_ll = (N-C)* (log(1-alpha) + log(q_e))
-#   
-#   compatible_ll = compatible_ll +  C * log(alpha)
-#   
-#   list(ll=incompatible_ll + compatible_ll, incompatible_ll=incompatible_ll,  compatible_ll=compatible_ll, alpha=alpha)  
-# }
-
-
 compute_q_e <- function(poset) {
   p=ncol(poset)
   if(ncol(poset) < 40 || sum(poset) < 8) {
@@ -143,12 +122,10 @@ compute_q_e <- function(poset) {
   log_q_e
 }
 
-incompatible_loglike <- function(poset, obs_events, times, weights, compatible_geno) {
+
+incompatible_loglike <- function(poset, obs_events, sampling_times, weights, compatible_geno, noise_model, geno_prob_noise=NULL) {
   p = ncol(poset)
 
-#   log_lattice_size = genoLatticeSize_fast(poset)
-  compatible_geno = compatible_genotypes(obs_events, poset)
-  
   # C: number of compatible genotypes
   C = sum(weights[compatible_geno$compatible_indexes])
   N = sum(weights)
@@ -158,11 +135,40 @@ incompatible_loglike <- function(poset, obs_events, times, weights, compatible_g
   # fraction of the data that are compatible with the given poset
   alpha = C / N
   
-  log_q_e = compute_q_e(poset)
+  if(noise_model == "uniform") {
+    log_q_e = I * compute_q_e(poset)
+   
+  } else if(noise_model == "empty_approx") { 
+    if(is.null(geno_prob_noise)) {
+      stop("Genotype probability estimates for the noise component are missing!")
+    }
+    
+    # log_q_e = likelihood_empty_noise_component(poset, obs_events, sampling_times, weights, lambdas_noise, nrOfSamplesLL)
+    nc_indexes = setdiff(1:nrow(obs_events), compatible_geno$compatible_indexes)
+    
+    log_q_e = 0
+    if(length(nc_indexes) > 0) {
+      log_q_e = sum( weights[nc_indexes] * geno_prob_noise[nc_indexes])
+    } 
+    
+  } else if(noise_model == "empty") {
+    
+    nc_indexes = setdiff(1:nrow(obs_events), compatible_geno$compatible_indexes)
+    
+    # As opposed to "empty" case, in this case "geno_prob_noise" only includes the probabilities of incompatible genotype so [nc_indexes] is not needed. 
+    log_q_e = 0
+    
+    if(length(nc_indexes) > 0) {
+      log_q_e = sum( weights[nc_indexes] * geno_prob_noise)
+    } 
+    
+  } else {
+    stop("Unknown noise model!")
+  }
   
   incompatible_ll = 0.0
   if( I > 0 ){
-    incompatible_ll = I * (log(1-alpha) + log_q_e)
+    incompatible_ll = I * log(1-alpha)  +  log_q_e
   }
   
   list(ll=incompatible_ll,  alpha=alpha) 
@@ -171,32 +177,8 @@ incompatible_loglike <- function(poset, obs_events, times, weights, compatible_g
 
 #' loglike_mixture_model
 #' @export
-loglike_mixture_model <- function(poset, lambda, obs_events, times, weights, control = list(ll_method="importance"), compatible_geno, incomp_loglike){
-#   p = ncol(poset)
-#   
-# #   lattice_size = orderIdeals(poset)$lattice_size
-#   log_lattice_size = genoLatticeSize(poset)
-# #   compatible_geno = compatible_genotypes(obs_events, poset)
-# 
-#     # C: number of compatible genotypes
-#     C = sum(weights[compatible_geno$compatible_indexes])
-#     N = sum(weights)
-#     # I: number of incompatible genotypes
-#     I = N - C
-#     
-#     # fraction of the data that are compatible with the given poset
-#     alpha = C / N
-#       
-# 
-#   log_q_e = -logsumexp( c(p * log(2), log_lattice_size), c(1, -1) )$logR
-#   
-#   
-#   incompatible_ll = 0.0
-#   if( I > 0 ){
-#     incompatible_ll = I * (log(1-alpha) + log_q_e)
-#   }
-#     
-      
+loglike_mixture_model <- function(poset, lambda, obs_events, sampling_times, weights, control = list(ll_method="importance"), compatible_geno, incomp_loglike){
+
   incompatible_ll = incomp_loglike$ll
   C = sum(weights[compatible_geno$compatible_indexes])
   alpha = incomp_loglike$alpha
@@ -206,38 +188,19 @@ loglike_mixture_model <- function(poset, lambda, obs_events, times, weights, con
   {
     genotypes = obs_events[compatible_geno$compatible_indexes, , drop=FALSE ]
     
-    times = times[compatible_geno$compatible_indexes]
+    sampling_times = sampling_times[compatible_geno$compatible_indexes]
     weights = weights[compatible_geno$compatible_indexes]
     
     if(control$ll_method == "importance") {
-       tmp = loglike_importance_sampling(poset, lambda, genotypes, times, control$nrOfSamples, weights, with_eps=FALSE, eps=NA)
+       tmp = loglike_importance_sampling(poset, lambda, genotypes, sampling_times, control$nrOfSamples, weights, with_eps=FALSE, eps=NA)
        compatible_ll = tmp$approx_loglike
     } else {
-      dtimes = discretize_times(times, control$D)
+      dtimes = discretize_times(sampling_times, control$D)
       compatible_ll = .likelihood_decomp(poset, lambda, genotypes, dtimes)
     }
     
     compatible_ll = compatible_ll + C * log(alpha)
   }
-  
-#   
-#   ################### temporary to remove
-#   print("todo")
-#   tmp2 = incompatible_ll
-#   
-#   N = sum(weights)
-#   # I: number of incompatible genotypes
-#   I = N - C
-#   
-#   
-#   log_q_e = min(tmp$probs)
-#   
-#   incompatible_ll = 0.0
-#   if( I > 0 ){
-#     incompatible_ll = I * (log(1-alpha) + log_q_e)
-#   }
-#   
-#   incompatible_ll = max(incompatible_ll, tmp2)
-  
+
   list(ll=incompatible_ll + compatible_ll, incompatible_ll=incompatible_ll,  compatible_ll=compatible_ll, alpha=alpha)  
 }

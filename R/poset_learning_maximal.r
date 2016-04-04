@@ -1,19 +1,3 @@
-# 
-# #' violation_freqs
-# #' @export
-# violation_freqs <- function(obs_events) {
-#   p = ncol(obs_events)
-#   N = nrow(obs_events)
-#   violations <- matrix(0, p, p)
-#   for(i in 1:p) {
-#     for(j in 1:p) {
-#       violations[i, j] = sum(obs_events[, i] == 0 & obs_events[, j] == 1)
-#     }
-#   }
-#   diag(violations) = N+1
-#   violations/N
-# }
-
 
 #' maximal_poset
 #' @export
@@ -82,15 +66,29 @@ violation_freqs_w <- function (obs_events, obs_weights) {
   violations/N
 }
 
+geno_compatible_fraction <- function(poset, obs_events, weights){
+  compatible_geno = compatible_genotypes(obs_events, poset)
+  
+  C = sum(weights[compatible_geno$compatible_indexes])
+  N = sum(weights)
+  # I: number of incompatible genotypes
+  I = N - C
+  
+  # fraction of the data that are compatible with the given poset
+  C / N
+}
 
-
-candidate_posets <- function (obs_events, obs_weights) {
+candidate_posets <- function (obs_events, obs_weights, min_compatible_geno_fraction) {
   posets <- list()
   violations = violation_freqs_w(obs_events, obs_weights)
   epsilons = sort(unique(c(0, violations)))
   print(length(epsilons))
   for (eps in epsilons) {
     poset = maximal_poset(violations, eps)
+    
+    if(geno_compatible_fraction(poset, obs_events, obs_weights)  < min_compatible_geno_fraction) 
+      break;
+    
     if (is_identical(poset, posets) == FALSE) {
       posets[[length(posets) + 1]] = poset
     }

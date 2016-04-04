@@ -4,7 +4,7 @@ build_transition_matrix <- function( lambda, G) {
   .Call("build_transition_matrix", lambda, G)
 }
 
-probs <- function(lambda, G, times) 
+probs <- function(lambda, G, sampling_times) 
 {
   tr_matrix = t(build_transition_matrix(lambda, G) )
   
@@ -19,7 +19,7 @@ probs <- function(lambda, G, times)
   v <- rep(0, nrow(tr_matrix))
   v[1] = 1
 
-  t( sapply(times, function(x){ 
+  t( sapply(sampling_times, function(x){ 
     A = expAtv(tr_matrix, v=v, t=x)$eAtv
     A[A<0]=0
     A/sum(A)
@@ -85,7 +85,7 @@ mopt <- function(init_lambda, likelihood_fn, obs_events, dtimes, G, optim_method
 
 #' fit_params
 #' @export 
-fit_params <- function(poset, obs_events, times, D=NA, ilambda = NA, use_grad=FALSE, optim_method="minqa", control=list(),
+fit_params <- function(poset, obs_events, sampling_times, D=NA, ilambda = NA, use_grad=FALSE, optim_method="minqa", control=list(),
   ## TODO : check arguments, check if var of mutations are not zer 
   ## stop if the poset has (a)? loop
   ## nrow(poset)  != ncol(poset) 
@@ -106,7 +106,7 @@ fit_params <- function(poset, obs_events, times, D=NA, ilambda = NA, use_grad=FA
   if(is.na(D)) {
     stop("TODO: implement a default dtimes without any approximation!")
   } else {
-    dtimes = discretize_times(times, D)  
+    dtimes = discretize_times(sampling_times, D)  
   }
   
   
@@ -131,20 +131,20 @@ fit_params <- function(poset, obs_events, times, D=NA, ilambda = NA, use_grad=FA
 
 
 
-fit_params_with_eps <- function(poset, obs_events, times, D=NA, ilambda = NA, 
+fit_params_with_eps <- function(poset, obs_events, sampling_times, D=NA, ilambda = NA, 
                                 use_grad=FALSE, optim_method="minqa",  control=list(), tol=0.02, lower=0.0, upper=0.4, ...) {
   
-  obj <- function(eps, poset, obs_events, times, D, ilambda, use_grad, optim_method, control,  ...) { 
+  obj <- function(eps, poset, obs_events, sampling_times, D, ilambda, use_grad, optim_method, control,  ...) { 
 #     print(eps)
-    fit = fit_params(poset, obs_events, times, D=D, ilambda = ilambda, use_grad=use_grad, optim_method="optim_method", control=control,
+    fit = fit_params(poset, obs_events, sampling_times, D=D, ilambda = ilambda, use_grad=use_grad, optim_method="optim_method", control=control,
                      err_model="hamming", eps=eps, ...)
     fit$value
   }
   
-  epsilon <- optimize(obj, c(lower, upper), ..., poset=poset, obs_events=obs_events, times=times, D=D,  ilambda=ilambda, use_grad=use_grad, optim_method=optim_method, 
+  epsilon <- optimize(obj, c(lower, upper), ..., poset=poset, obs_events=obs_events, sampling_times=sampling_times, D=D,  ilambda=ilambda, use_grad=use_grad, optim_method=optim_method, 
                       control=control,  tol = tol, maximum = TRUE)$maximum
   
-  fit = fit_params(poset, obs_events, times, D=D, ilambda = ilambda, use_grad=use_grad, optim_method="optim_method", control=control,
+  fit = fit_params(poset, obs_events, sampling_times, D=D, ilambda = ilambda, use_grad=use_grad, optim_method="optim_method", control=control,
                    err_model="hamming", eps=epsilon, ...)
   fit$epsilon = epsilon
   fit
@@ -188,11 +188,11 @@ estimate_lambda <- function(obs_events, dtimes, poset_, likelihood_fn = likeliho
   list(value=ll, par=mle_lambda, fits=fits)
 }
 
-initialize_lambda <- function ( obs_events, times, poset, verbose=FALSE) {
+initialize_lambda <- function ( obs_events, sampling_times, poset, verbose=FALSE) {
   p = nrow(poset)
   
   if(p == 1) {
-     return( 1/mean(times) )
+     return( 1/mean(sampling_times) )
   }
   
   theta <- rep(0, p)
@@ -221,7 +221,7 @@ initialize_lambda <- function ( obs_events, times, poset, verbose=FALSE) {
       }
     } 
   }
-  avg_time = mean(times)
+  avg_time = mean(sampling_times)
   ###rep(1/mean(times),p)
   sapply(theta, function(x) { -log(max(1-x, 0.00001)) /avg_time })
 }

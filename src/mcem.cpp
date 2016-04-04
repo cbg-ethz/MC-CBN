@@ -57,8 +57,6 @@ double my_dexp(double x, double rate, bool log_scale=false) {
 
 
 double my_pexp(double x, double  rate, bool  log_scale=false) {
-  
-  
   NumericVector ret = pexp( NumericVector::create(x), rate, true, log_scale);
   
   return(as<double>(ret));
@@ -130,17 +128,7 @@ NumericVector _expectedTimeDifference(const NumericVector &O_vec,  double time, 
   for(int i = 0; i < nrOfSamples; i++) {
     timeSamples(i, _) = drawHiddenVarsSample(O_vec , time, lambda, topo_path, parents, proposal_density);  
     org_density = log_cbn_density_(timeSamples(i, _), lambda);
-    
     weights[i] = exp(org_density - proposal_density);
-//    
-//    cout<<"*************"<<endl;
-//    for(int j = 0; j <  timeSamples.nrow(); j++) {
-//     cout<< timeSamples(i, j) << "   ";
-//    }
-//    cout<<endl;
-//    cout<<weights[i]<<endl;
-//    cout<<time<< "    " <<  endl;
-//    cout<<"*************"<<endl;
   }
 
   if(sum(weights) == 0) {
@@ -159,11 +147,7 @@ NumericVector _expectedTimeDifference(const NumericVector &O_vec,  double time, 
   }
   cout<<endl; */
 
-  
-  
-  
-  
-  
+
   NumericVector timeDifference(p);
   for(int i = 0; i < p; i++) {
     timeDifference[i] = sum(timeSamples(_, i) * weights);
@@ -216,9 +200,8 @@ RcppExport SEXP expectedTimeDifference(SEXP nrOfSamples_, SEXP O_vec_,  SEXP tim
   NumericMatrix poset = as<NumericMatrix>(poset_);
   
   int p = lambda.length();
-  
-  
-   vector< vector<int> > parents(p);
+
+  vector< vector<int> > parents(p);
   
   for(int k = 0; k < p; k++) {
     for(int i = 0; i < p; i++ ) {
@@ -281,7 +264,6 @@ RcppExport SEXP MCEM( SEXP ilambda_, SEXP poset_, SEXP O_, SEXP times_, SEXP max
   
   double N = sum(weights);
   
-  
   double alpha = as<double>(alpha_);
   
   int iter = 0;
@@ -297,39 +279,15 @@ RcppExport SEXP MCEM( SEXP ilambda_, SEXP poset_, SEXP O_, SEXP times_, SEXP max
       // E step
     newMutationTimes = gernerateMutationTimes(lambda, poset, O, times, topo_path, nrOfSamples);
     
-    
       // M-step
       // TODO: To update the  rate parameter of a mutation, only use those genotypes that have some
       // evidence for estimation of this mutation, i.e., all of their parent mutations have happened!
     for(int i = 0; i < p; i++) {
-      
       T_colsum[i] = sum(weights*newMutationTimes(_, i));
-      
-      
+
 //      T_colsum[i] = exp( logsumexp_positive(log(weights) + log(newMutationTimes(_, i)) ) ) ;
       lambda[i] = N/T_colsum[i];
     }
-    
-//        cout<<"---------------------"<<endl;
-//    print_matrix(newMutationTimes);
-//    cout<<min(newMutationTimes) <<"    "<< max(newMutationTimes)<<endl;
-//    for(int i = 0; i < p; i++) {
-//        cout<<average_lambda[i] << "   " << lambda[i] <<endl;
-//    }
-//      cout<<"---"<<endl;
-//    cout<<"++++++++++++++++"<<endl;
-
-    
-    
-//    
-//      if(verbose) {
-//      cout<<iter<< " : "<<average_ll<< endl;
-//      cout<<ll<<endl;
-////      cout<<average_lambda<<endl;
-////      cout<<lambda<<endl;
-////      
-
-//    }
     
     ll = N * sum(log(lambda)) - sum(lambda*T_colsum);
     
@@ -339,25 +297,12 @@ RcppExport SEXP MCEM( SEXP ilambda_, SEXP poset_, SEXP O_, SEXP times_, SEXP max
       average_ll = average_ll + ll;
     }
 
-    
-//    if(iter == 0) {
-//      average_lambda = clone(lambda) ;
-//      average_ll = ll;
-//    } else {
-//        // averaging over the last rates
-//      average_lambda = (1-alpha) * average_lambda  + alpha * lambda;
-//      average_ll     = (1-alpha) * average_ll      + alpha * ll;
-//    }
-    
-
     iter =  iter + 1;
   }
   average_lambda = average_lambda/ (max_iter-start_iter);
   average_ll = average_ll/ (max_iter-start_iter);
-  if(verbose) {
-    cout<<"S:"<<start_iter<<endl;
-  }
-  return Rcpp::List::create(Rcpp::Named("par") = average_lambda, Rcpp::Named("ll")=average_ll);
+
+    return Rcpp::List::create(Rcpp::Named("par") = average_lambda, Rcpp::Named("ll")=average_ll);
 }
 
 /********************** Topological sorts - not necessary for the MCEM **********************/
@@ -466,11 +411,7 @@ int get_next_node(const IntegerVector &visited, const int &p) {
 double genoLatticeSizeRecursion(const NumericMatrix &poset, const IntegerVector &visited_, bool verbose) {
   IntegerVector visited = clone(visited_);
   int p = poset.ncol();
-//if(verbose){
-//  cout<<"start"<<endl;
-//  print_vec(visited);
-//}
-  
+
   if(sum(visited) == (p-1) ) {
     return(log(2));
   }
@@ -481,24 +422,8 @@ double genoLatticeSizeRecursion(const NumericMatrix &poset, const IntegerVector 
   
   visited[next_node] = 1;
 
-//  if(verbose){
-//      cout<<"before"<<endl;
-//    cout<< "next_node : " << next_node <<endl;
-//    print_vec(visited);
-//  }
-  
   double log_size1 = genoLatticeSizeRecursion(poset, visited, verbose);
-//  if(verbose) {
-//  cout<< " log_size1 : "  <<exp(log_size1)<<endl;
-//   cout<< "next_node* : " << next_node <<endl;
-//  print_vec(visited);
-//    
-//  }
-  
-//  cout<<"NNNNNNNNNNNNNNNNN" <<endl; 
-//  print_vec(visited);
-//  print_matrix(poset);
-  
+
   bool one_node = true;
   for(int i = 0; i < p; i++) {
     
@@ -509,37 +434,15 @@ double genoLatticeSizeRecursion(const NumericMatrix &poset, const IntegerVector 
       }
     }
   }
-  
-//  cout<<"FFFFFFFFFFFFFFFFF" <<endl; 
-//  print_vec(visited);
-//  print_matrix(poset);
-
-  
   if( one_node ) {
-//    if(verbose) {
-//    cout<<"AAA" <<endl;      
-//    }
-
       // 2 * size1
     return(log(2) + log_size1); 
   } else if(sum(visited) == poset.ncol() ){
-//     if(verbose) {
-//      cout<<"BBB" <<endl;      
-//     }
-    
     return(logsumexp(log_size1, log(1)));
   }
  
-// if(verbose) {
-//   cout<< "next_node*** : " << next_node <<endl;
-//  print_vec(visited);
-//  }
   double log_size2 = genoLatticeSizeRecursion( poset, visited, verbose);
-//  if(verbose) {
-//  cout<<" log_size2 = "<<exp(log_size2)<<endl;
-//  print_vec(visited);
-//  }
-    
+  
   return logsumexp(log_size1, log_size2);
 }
 
@@ -550,30 +453,3 @@ RcppExport SEXP genoLatticeSize(SEXP poset_, bool verbose=false){
   IntegerVector visited = rep(0, poset.ncol());
   return wrap(genoLatticeSizeRecursion(poset, visited, verbose));
 }
-
-//genoLatticeSizeRecursion <- function(poset) {
-//  
-//  if(all(poset == 0)) {
-//    return(ncol(poset) * log(2) )
-//  }
-//  
-//  indegs = apply(poset, 2, sum)
-//  next_node = which.min( abs( indegs - mean(indegs) ) )[1]
-//  next_node = 1
-//
-//  log_size1 = genoLatticeSizeRecursion(as.matrix(poset[-next_node,-next_node]) ) 
-//  # just in comment size1= exp(log_size1)
-//  
-//  indexes = unique(c(next_node, which(poset[next_node,] == 1), which(poset[,next_node] == 1)) )
-//
-//  if(length(indexes) == 1) {
-//      # 2 * size1
-//    return(log(2) + log_size1)    
-//  } else if(length(indexes) == ncol(poset)) {
-//      # size1 + 1
-//    return(logsumexp(c(log_size1, log(1)))$logR )
-//  }
-//
-//  log_size2 = genoLatticeSizeRecursion(as.matrix(poset[-indexes,-indexes]) ) 
-//  logsumexp(c(log_size1, log_size2))$logR
-//}  

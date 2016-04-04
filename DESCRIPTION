@@ -1,8 +1,8 @@
 Package: mccbn
 Type: Package
 Title: What the package does (short line)
-Version: 1.1.0
-Date: 2015-09-20
+Version: 1.1.6
+Date: 2016-03-17
 Author: Hesam Montazeri
 Maintainer: Hesam Montazeri<hesam.montazeri@bsse.ethz.ch>
 Description: A fast implementation for the Observed Time Conjunctive Bayesian Network (OT-CBN)
