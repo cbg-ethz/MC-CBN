@@ -82,7 +82,7 @@ candidate_posets <- function (obs_events, obs_weights, min_compatible_geno_fract
   posets <- list()
   violations = violation_freqs_w(obs_events, obs_weights)
   epsilons = sort(unique(c(0, violations)))
-  print(length(epsilons))
+  # print(length(epsilons))
   for (eps in epsilons) {
     poset = maximal_poset(violations, eps)
     
@@ -93,7 +93,7 @@ candidate_posets <- function (obs_events, obs_weights, min_compatible_geno_fract
       posets[[length(posets) + 1]] = poset
     }
   }
-  print(length(posets))
+  # print(length(posets))
   posets
 }
 

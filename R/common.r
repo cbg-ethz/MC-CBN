@@ -124,6 +124,9 @@ compatible_genotypes_with_matrix <- function(poset) {
 }
 
 
+random_poset <- function(p, graph_density=0.15, trans_reduced = TRUE){
+  random_posets(nr_pos=1, nr_muts=p , ldenses=graph_density, trans_reduced = trans_reduced)[[1]]
+}
 
 random_posets <- function(nr_pos, nr_muts , ldenses, trans_reduced = TRUE){
 

@@ -1,6 +1,14 @@
+
+
+estimate_mutation_rates <- function(poset, genotypes, sampling_times, max_iter=100,  zeta = 0.2, nrOfSamples = 5, verbose = TRUE) {
+  MCEM(poset=poset, obs_events=genotypes, sampling_times=sampling_times, max_iter=max_iter, alpha = zeta, 
+       nrOfSamples = nrOfSamples, verbose = verbose)   
+}
+
 # TODO: give error message if O is not matrix
 
-MCEM <- function(poset, obs_events, sampling_times, max_iter,  weights=NULL, alpha = 1.0, ilambda=NULL, nrOfSamples = 50,
+
+MCEM <- function(poset, obs_events, sampling_times, max_iter=100,  weights=NULL, alpha = 0.2, ilambda=NULL, nrOfSamples = 50,
                  verbose = TRUE, small_number=10^-7) {
   
   if( is_all_genotypes_compatible_with_poset(poset, obs_events, weights) == FALSE){
@@ -74,10 +82,10 @@ learn_network_boot <- function(obs_events, sampling_times, B = 50, weights=NULL,
 
 
 
-learn_network <- function(obs_events, sampling_times, weights=NULL, max_iter=200, alpha = 1.0, nrOfSamplesForEStep=50,
+learn_network <- function(obs_events, sampling_times, weights=NULL, max_iter=100, zeta = 0.2, L=5,
                           nrOfSamplesForLL = 100,   noise_model="empty", verbose=FALSE, min_compatible_geno_fraction=0.5) {
   
-  all_maximal_posets_mcem(obs_events, sampling_times, max_iter, alpha, nrOfSamplesForEStep,
+  all_maximal_posets_mcem(obs_events, sampling_times, max_iter, zeta, L,
                                       nrOfSamplesForLL, weights, removeZeroWeights=TRUE,  noise_model, verbose, min_compatible_geno_fraction)  
 }
 

@@ -90,7 +90,7 @@ sampling.dep <- function(n, random_fraction, mut_times) {
 
 #' sample_timed_genotypes_with_eps
 #' @export
-sample_genotypes <- function (n, poset, sampling_param, lambdas, sampling_fn, eps=0.0) 
+sample_genotypes <- function (n, poset, sampling_param, lambdas, sampling_fn=sampling.expo, eps=0.0) 
 {
   p = length(lambdas)
   T_events <- matrix(0, n, p)
