@@ -69,7 +69,7 @@ plot_poset(fit$posets[[mle_index]])
 - [Hesam Montazeri](https://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=168604)
 - [Niko Beerenwinkel](http://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=149417)
 
- ###Contact
+###Contact
 ```
 Hesam Montazeri
 hesam.montazeri (at) bsse.ethz.ch
