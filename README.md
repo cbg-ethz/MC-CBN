@@ -2,7 +2,7 @@
 MC-CBN performs an efficient large-scale inference of the continuous time conjunctive Bayesian network (CBN). MC-CBN uses Monte Carlo expectation-maximization algorithm for inference of the CBN model.
 
 ##Usage
-In this section, we explain how to use this R package on a simple example. In this example, we first generate a random poset as the true poset and assign to each node a mutation rate. Then, _N_ genotypes and corresponding sequencing times are simulated from this poset. Then, in the first task, we estimate the mutation rates for the given _true poset_. In the second task, we estimate the maximum likelihood (ML) poset for the observed data.
+In this section, we explain how to use the R package on a simple example. In this example, we first generate a random poset as the true poset and assign to each node a mutation rate. Then, _N_ genotypes and corresponding sequencing times are simulated from this poset. Then, in the first task, we estimate the mutation rates for the given _true poset_. In the second task, we estimate the maximum likelihood (ML) poset for the observed data.
 
 First, we load the necessary libraries and set the random seed for the reproducibility.   
 ```
@@ -41,7 +41,7 @@ _N_ genotypes are simulated from the true CBN model i.e., _poset_ and _mutation 
 # Simulate genotypes and sequencing times consistent with poset and mutation rates
 simGenotypes = sample_genotypes(N, true_poset, sampling_param = lambda_s, lambdas=lambdas)
 ```
-Now weestimate mutation rates using _estimate_mutation_rates_
+Now we estimate mutation rates using _estimate_mutation_rates_
 ```
 # estimate mutation rates for a fixed poset 
 est_lambda = estimate_mutation_rates(true_poset, simGenotypes$obs_events, simGenotypes$T_sampling) 
