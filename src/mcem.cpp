@@ -247,7 +247,7 @@ NumericMatrix gernerateMutationTimes(const NumericVector &lambda, const NumericM
 
 
 RcppExport SEXP MCEM( SEXP ilambda_, SEXP poset_, SEXP O_, SEXP times_, SEXP max_iter_, SEXP alpha_, SEXP topo_path_, SEXP weights_,
-  SEXP nrOfSamples_, SEXP verbose_) {
+  SEXP nrOfSamples_, SEXP verbose_, SEXP maxLambda_) {
   int nrOfSamples = as<int>(nrOfSamples_);
   NumericMatrix poset = as<NumericMatrix>(poset_);
   NumericMatrix O = as<NumericMatrix>(O_);
@@ -256,6 +256,7 @@ RcppExport SEXP MCEM( SEXP ilambda_, SEXP poset_, SEXP O_, SEXP times_, SEXP max
   NumericVector lambda = clone(ilambda);
   NumericVector weights = as<NumericVector >(weights_);
   int max_iter = as<int>(max_iter_),  p = poset.nrow();
+  double maxLambda = as<double>(maxLambda_);
   
   NumericVector average_lambda = clone(lambda), T_colsum(p);
   NumericVector topo_path = as<NumericVector >(topo_path_);
@@ -287,6 +288,9 @@ RcppExport SEXP MCEM( SEXP ilambda_, SEXP poset_, SEXP O_, SEXP times_, SEXP max
 
 //      T_colsum[i] = exp( logsumexp_positive(log(weights) + log(newMutationTimes(_, i)) ) ) ;
       lambda[i] = N/T_colsum[i];
+      if(lambda[i] > maxLambda) {
+        lambda[i] = maxLambda;
+      }
     }
     
     ll = N * sum(log(lambda)) - sum(lambda*T_colsum);
@@ -296,7 +300,7 @@ RcppExport SEXP MCEM( SEXP ilambda_, SEXP poset_, SEXP O_, SEXP times_, SEXP max
       average_lambda =  average_lambda  +  lambda;
       average_ll = average_ll + ll;
     }
-
+    
     iter =  iter + 1;
   }
   average_lambda = average_lambda/ (max_iter-start_iter);

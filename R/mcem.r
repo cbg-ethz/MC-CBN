@@ -1,15 +1,16 @@
 
 
-estimate_mutation_rates <- function(poset, genotypes, sampling_times, weights = NULL, max_iter=100,  zeta = 0.2, ilambda = NULL, nrOfSamples = 5, verbose = TRUE) {
+estimate_mutation_rates <- function(poset, genotypes, sampling_times, weights = NULL, max_iter=100,  zeta = 0.2, ilambda = NULL,
+                          nrOfSamples = 5, verbose = TRUE, maxLambdaValue=10^6) {
   MCEM(poset=poset, obs_events=genotypes, sampling_times=sampling_times, max_iter=max_iter, weights=weights, alpha = zeta, 
-       nrOfSamples = nrOfSamples, verbose = verbose)   
+       nrOfSamples = nrOfSamples, verbose = verbose, maxLambdaValue=maxLambdaValue)   
 }
 
 # TODO: give error message if O is not matrix
 
 
 MCEM <- function(poset, obs_events, sampling_times, max_iter=100,  weights=NULL, alpha = 0.2, ilambda=NULL, nrOfSamples = 50,
-                 verbose = TRUE, small_number=10^-7) {
+                 verbose = TRUE, small_number=10^-7, maxLambdaValue) {
   
   if( is_all_genotypes_compatible_with_poset(poset, obs_events, weights) == FALSE){
     stop("Error in the function MCEM: Some genotypes with non-zero weights are incompatible with the poset!")
@@ -24,7 +25,7 @@ MCEM <- function(poset, obs_events, sampling_times, max_iter=100,  weights=NULL,
     ilambda[ilambda==0] = small_number
   }
   topo_path = my.topological.sort(poset)-1
-  .Call("MCEM", ilambda, poset, obs_events, sampling_times, max_iter, alpha, topo_path, weights, nrOfSamples, verbose)
+  .Call("MCEM", ilambda, poset, obs_events, sampling_times, max_iter, alpha, topo_path, weights, nrOfSamples, verbose, maxLambdaValue)
 }
 
 allTopoSorts <- function(poset) {
@@ -83,10 +84,10 @@ learn_network_boot <- function(obs_events, sampling_times, B = 50, weights=NULL,
 
 
 learn_network <- function(obs_events, sampling_times, weights=NULL, max_iter=100, zeta = 0.2, L=5,
-                          nrOfSamplesForLL = 100,   noise_model="empty", verbose=FALSE, min_compatible_geno_fraction=0.5) {
+                          nrOfSamplesForLL = 100,   noise_model="empty", verbose=FALSE, min_compatible_geno_fraction=0.5, maxLambdaValue=10^6) {
   
-  all_maximal_posets_mcem(obs_events, sampling_times, max_iter, zeta, L,
-                                      nrOfSamplesForLL, weights, removeZeroWeights=TRUE,  noise_model, verbose, min_compatible_geno_fraction)  
+  all_maximal_posets_mcem(obs_events, sampling_times, max_iter, zeta, L, nrOfSamplesForLL, weights, removeZeroWeights=TRUE,  
+                          noise_model, verbose, min_compatible_geno_fraction, maxLambdaValue=maxLambdaValue)  
 }
 
 
@@ -105,7 +106,7 @@ genotype_probs_empty_poset <- function (obs_events, sampling_times, weights, max
 
 all_maximal_posets_mcem <- function(obs_events, sampling_times, max_iter=200, alpha = 1.0, nrOfSamplesForEStep=50,
                                     nrOfSamplesForLL = 100, weights=NULL, removeZeroWeights=TRUE, noise_model="empty", verbose=FALSE, 
-                                    min_compatible_geno_fraction)
+                                    min_compatible_geno_fraction, maxLambdaValue)
 {
   if(is.matrix(obs_events) == FALSE) {
     stop("Function all_maximal_posets_mcem: obs_events must be of 'matrix' type!")
@@ -177,7 +178,7 @@ all_maximal_posets_mcem <- function(obs_events, sampling_times, max_iter=200, al
       }
     } else{
       fit = MCEM(poset, obs_events[compatible_geno$compatible_indexes, , drop=FALSE ], sampling_times[compatible_geno$compatible_indexes], max_iter=max_iter,
-                 weights=weights[compatible_geno$compatible_indexes], alpha = alpha, ilambda=ilambda, nrOfSamples=nrOfSamplesForEStep, verbose=verbose)
+                 weights=weights[compatible_geno$compatible_indexes], alpha = alpha, ilambda=ilambda, nrOfSamples=nrOfSamplesForEStep, verbose=verbose, maxLambdaValue=maxLambdaValue)
       
       lambdas = fit$par
       if(verbose) {
