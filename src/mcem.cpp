@@ -123,18 +123,18 @@ NumericVector _expectedTimeDifference(const NumericVector &O_vec,  double time, 
   
   double proposal_density, org_density;
   NumericMatrix timeSamples(nrOfSamples, p); 
-  NumericVector weights(nrOfSamples);
+  NumericVector importanceWeights(nrOfSamples);
   
   for(int i = 0; i < nrOfSamples; i++) {
     timeSamples(i, _) = drawHiddenVarsSample(O_vec , time, lambda, topo_path, parents, proposal_density);  
     org_density = log_cbn_density_(timeSamples(i, _), lambda);
-    weights[i] = exp(org_density - proposal_density);
+    importanceWeights[i] = exp(org_density - proposal_density);
   }
 
-  if(sum(weights) == 0) {
-    weights = rep(1.0/nrOfSamples, nrOfSamples);
+  if(sum(importanceWeights) == 0) { // just for rare cases in the first iterations of the MC-EM
+    importanceWeights = rep(1.0/nrOfSamples, nrOfSamples);
   } else {
-    weights = weights / sum(weights);  
+    importanceWeights = importanceWeights / sum(importanceWeights);  
   }
   
  /*  cout<<"weights:";
@@ -150,7 +150,7 @@ NumericVector _expectedTimeDifference(const NumericVector &O_vec,  double time, 
 
   NumericVector timeDifference(p);
   for(int i = 0; i < p; i++) {
-    timeDifference[i] = sum(timeSamples(_, i) * weights);
+    timeDifference[i] = sum(timeSamples(_, i) * importanceWeights);
   }
   
   return(timeDifference);
