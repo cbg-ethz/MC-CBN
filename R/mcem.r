@@ -91,13 +91,14 @@ learn_network <- function(obs_events, sampling_times, weights=NULL, max_iter=100
 }
 
 
-genotype_probs_empty_poset <- function (obs_events, sampling_times, weights, max_iter, alpha, nrOfSamplesForEStep, verbose  ) {
+genotype_probs_empty_poset <- function (obs_events, sampling_times, weights, max_iter, alpha, nrOfSamplesForEStep, verbose, maxLambdaValue) {
    # all the observed genotypes.
    poset_noise = make_empty_poset(ncol(obs_events) ) 
    
    # 1) estimate the rates from all the data use MCEM function
    fit = MCEM(poset_noise, obs_events, sampling_times, max_iter=max_iter,
-              weights=weights, alpha = alpha, ilambda=NULL, nrOfSamples=nrOfSamplesForEStep, verbose=verbose)
+              weights=weights, alpha=alpha, ilambda=NULL, nrOfSamples=nrOfSamplesForEStep, verbose=verbose,
+              maxLambdaValue=maxLambdaValue)
    lambdas_noise = fit$par
    
    geno_prob_noise = all_genotype_prob_for_empty_poset(lambdas_noise, obs_events, sampling_times, log.p=TRUE)
@@ -139,7 +140,7 @@ all_maximal_posets_mcem <- function(obs_events, sampling_times, max_iter=200, al
   max_loglike = -Inf # loglike is always negative
   
   if(noise_model == "empty_approx") {
-    geno_prob_noise = genotype_probs_empty_poset(obs_events, sampling_times, weights, max_iter, alpha, nrOfSamplesForEStep, verbose  )
+    geno_prob_noise = genotype_probs_empty_poset(obs_events, sampling_times, weights, max_iter, alpha, nrOfSamplesForEStep, verbose, maxLambdaValue)
   }
     
   for(i in 1:nr_posets) 
@@ -163,7 +164,7 @@ all_maximal_posets_mcem <- function(obs_events, sampling_times, max_iter=200, al
       geno_prob_noise = NA
       if(length(nc_indexes) > 0) {
         geno_prob_noise = genotype_probs_empty_poset(obs_events[nc_indexes, , drop=FALSE], sampling_times[nc_indexes], weights[nc_indexes], 
-                                                     max_iter, alpha, nrOfSamplesForEStep, verbose)
+                                                     max_iter, alpha, nrOfSamplesForEStep, verbose, maxLambdaValue)
         
       }
       # learn the empty poset params using incompatible data
