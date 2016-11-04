@@ -1,0 +1,12 @@
+
+Prerequisites packages: graph
+
+1) Install graph
+source("https://bioconductor.org/biocLite.R")
+biocLite("graph")
+biocLite("Rgraphviz")
+
+
+2) Then install  mccbn directly from github
+library(devtools)
+install_github("cbg-ethz/MC-CBN") 
