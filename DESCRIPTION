@@ -1,11 +1,11 @@
 Package: mccbn
 Type: Package
-Title: What the package does (short line)
-Version: 1.1.8
-Date: 2016-11-1
+Title: Large-scale inference of continuous time Conjunctive Bayesian Networks
+Version: 1.1.9
+Date: 2016-11-19
 Author: Hesam Montazeri
 Maintainer: Hesam Montazeri<hesam.montazeri@bsse.ethz.ch>
-Description: A fast implementation for the Observed Time Conjunctive Bayesian Network (OT-CBN)
+Description: MC-CBN performs large-scale inference on conjunctive Bayesian networks using genetic data. Sequencing times can also be given
 License: GPL (>= 2)
 Imports: Rcpp (>= 0.11.3)
 LinkingTo: Rcpp, RcppArmadillo
