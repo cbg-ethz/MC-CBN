@@ -1,5 +1,6 @@
-earn_network_boot <- function(obs_events, sampling_times, B = 50, weights=NULL, max_iter=200, zeta = 0.2, nrOfSamplesForEStep=50,
-                               nrOfSamplesForLL = 100,   noise_model="empty", verbose=FALSE, min_compatible_geno_fraction = 0.5) {
+learn_network_boot <- function(B, obs_events, sampling_times=NULL, weights=NULL, max_iter=100, zeta = 0.2, L=5,
+                               nrOfSamplesForLL = 100,   noise_model="empty", verbose=FALSE, min_compatible_geno_fraction = 0.5, 
+                               maxLambdaValue=10^6, lambda_s=1.0) {
   
   est_poset = est_poset_trans = matrix(0, ncol(obs_events), ncol(obs_events))
   N = nrow(obs_events)
@@ -11,10 +12,20 @@ earn_network_boot <- function(obs_events, sampling_times, B = 50, weights=NULL, 
     
     indexes = sample(nrow(obs_events),  N, replace =TRUE )
     obs_events2 = obs_events[indexes, ]
-    times2 = sampling_times[indexes]
-    weights2 = weights[indexes]
+    
+    if(is.null(sampling_times)) {
+      times2 = NULL
+    } else {
+      times2 = sampling_times[indexes]
+    }
+    
+    if(is.null(weights)) {
+      weights2 = NULL
+    } else{
+      weights2 = weights[indexes]
+    }
 
-    result = learn_network(obs_events2, times2, weights2, max_iter, zeta, nrOfSamplesForEStep,
+    result = learn_network(obs_events2, times2, weights2, max_iter, zeta, L,
                            nrOfSamplesForLL, noise_model, verbose, min_compatible_geno_fraction)   
     ml_index = which.max(result$loglik)
     mle_poset = result$posets[[ml_index]]
