@@ -9,4 +9,4 @@ Description: MC-CBN performs large-scale inference on conjunctive Bayesian netwo
 License: GPL (>= 2)
 Imports: Rcpp (>= 0.11.3)
 LinkingTo: Rcpp, RcppArmadillo
-Depends: igraph, expm, foreach, R.utils, minqa, MASS, relations
+Depends: igraph, foreach, R.utils, MASS, relations
