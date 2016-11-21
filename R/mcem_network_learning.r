@@ -2,13 +2,12 @@ learn_network_boot <- function(B, obs_events, sampling_times=NULL, weights=NULL,
                                nrOfSamplesForLL = 100,   noise_model="empty", verbose=FALSE, min_compatible_geno_fraction = 0.5, 
                                maxLambdaValue=10^6, lambda_s=1.0) {
   
-  est_poset = est_poset_trans = matrix(0, ncol(obs_events), ncol(obs_events))
   N = nrow(obs_events)
   if(is.null(weights)) {
     weights = rep(1, nrow(obs_events))
   }
   
-  for(i in 1:B) {
+  ml_posets = foreach(i = 1:B) %dopar% {
     
     indexes = sample(nrow(obs_events),  N, replace =TRUE )
     obs_events2 = obs_events[indexes, ]
@@ -28,11 +27,17 @@ learn_network_boot <- function(B, obs_events, sampling_times=NULL, weights=NULL,
     result = learn_network(obs_events2, times2, weights2, max_iter, zeta, L,
                            nrOfSamplesForLL, noise_model, verbose, min_compatible_geno_fraction)   
     ml_index = which.max(result$loglik)
-    mle_poset = result$posets[[ml_index]]
-    
+    result$posets[[ml_index]]
+  }
+  
+  est_poset = est_poset_trans = matrix(0, ncol(obs_events), ncol(obs_events))
+  
+  
+  for(mle_poset in ml_posets) {
     est_poset = est_poset + mle_poset
     est_poset_trans = est_poset_trans + trans_closure(mle_poset)
   }
+
   list(poset= est_poset/B, poset_trans = est_poset_trans/B)
 }
 
