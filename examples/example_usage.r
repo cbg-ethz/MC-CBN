@@ -60,7 +60,15 @@ mle_index = which.max(fit$logliks)
 plot_poset(fit$posets[[mle_index]])
 
 
+# ploting fraction of incompatible genotypes vs log-likelihood
+plot(1-fit$alphas, fit$logliks, type='l', xlab="fraction of incompatible genotypes", ylab="log-likelihood")
+points(1-fit$alphas, fit$logliks, col=2)
+
+print(fit$alphas[mle_index])
+
+
 ######################### bootstrapping
 
 bootRes = learn_network_boot(B=10, simGenotypes$obs_events)
 bootRes$poset
+
