@@ -1,6 +1,7 @@
 learn_network_boot <- function(B, obs_events, sampling_times=NULL, weights=NULL, max_iter=100, zeta = 0.2, L=5,
-                               nrOfSamplesForLL = 100,   noise_model="empty", verbose=FALSE, min_compatible_geno_fraction = 0.5, 
-                               maxLambdaValue=10^6, lambda_s=1.0) {
+                               nrOfSamplesForLL = 100, noise_model="empty", verbose=FALSE, 
+                               min_compatible_geno_fraction=0.5, maxLambdaValue=1e6, lambda_s=1.0, 
+                               exhaustive_comp_loglik=FALSE) {
   
   N = nrow(obs_events)
   if(is.null(weights)) {
@@ -25,7 +26,8 @@ learn_network_boot <- function(B, obs_events, sampling_times=NULL, weights=NULL,
     }
 
     result = learn_network(obs_events2, times2, weights2, max_iter, zeta, L,
-                           nrOfSamplesForLL, noise_model, verbose, min_compatible_geno_fraction)   
+                           nrOfSamplesForLL, noise_model, verbose, min_compatible_geno_fraction,
+                           maxLambdaValue, lambda_s, exhaustive_comp_loglik)   
     ml_index = which.max(result$loglik)
     result$posets[[ml_index]]
   }
@@ -42,26 +44,31 @@ learn_network_boot <- function(B, obs_events, sampling_times=NULL, weights=NULL,
 }
 
 learn_network <- function(obs_events, sampling_times = NULL, weights=NULL, max_iter=100, zeta = 0.2, L=5,
-                          nrOfSamplesForLL = 100,   noise_model="empty", verbose=FALSE, min_compatible_geno_fraction=0.5, maxLambdaValue=10^6, lambda_s=1.0) {
+                          nrOfSamplesForLL = 100, noise_model="empty", verbose=FALSE, 
+                          min_compatible_geno_fraction=0.5, maxLambdaValue=10^6, lambda_s=1.0, 
+                          exhaustive_comp_loglik=FALSE) {
   
   sampling_times_available = is.null(sampling_times) == FALSE
   
-  learn_network_internal(obs_events, sampling_times, max_iter, zeta, L, nrOfSamplesForLL, weights, removeZeroWeights=TRUE,   noise_model, 
-      verbose, min_compatible_geno_fraction, maxLambdaValue=maxLambdaValue, lambda_s=lambda_s, sampling_times_available=sampling_times_available)  
+  learn_network_internal(obs_events, sampling_times, max_iter, zeta, L, nrOfSamplesForLL, weights, 
+                         removeZeroWeights=TRUE, noise_model, verbose, min_compatible_geno_fraction, 
+                         maxLambdaValue=maxLambdaValue, lambda_s=lambda_s, 
+                         sampling_times_available=sampling_times_available, exhaustive_comp_loglik)  
 }
 
 
 learn_network_internal <- function(obs_events, sampling_times, max_iter=200, zeta = 0.2, nrOfSamplesForEStep=50,
-                                    nrOfSamplesForLL = 100, weights=NULL, removeZeroWeights=TRUE,
-                                    noise_model=c("empty", "empty_approx"), verbose=FALSE, min_compatible_geno_fraction=0.5,
-                                    maxLambdaValue=1e6, lambda_s=1.0, sampling_times_available=TRUE) {
+                                   nrOfSamplesForLL = 100, weights=NULL, removeZeroWeights=TRUE,
+                                   noise_model="empty", verbose=FALSE, min_compatible_geno_fraction=0.5,
+                                   maxLambdaValue=1e6, lambda_s=1.0, sampling_times_available=TRUE, 
+                                   exhaustive_comp_loglik=FALSE) {
     
   if(sampling_times_available == FALSE) {
     sampling_times = rep(0, nrow(obs_events))
   } 
   
   if(is.matrix(obs_events) == FALSE) {
-    stop("Function all_maximal_posets_mcem: obs_events must be of 'matrix' type!")
+    stop("Function learn_network_internal: obs_events must be of 'matrix' type!")
   }
   
   if(is.null(weights)) {
@@ -116,17 +123,29 @@ learn_network_internal <- function(obs_events, sampling_times, max_iter=200, zet
       }
     }
     
-    logkile_incompatible = incompatible_loglike(poset, obs_events, sampling_times, weights, compatible_geno, noise_model, geno_prob_noise)
+    loglike_incompatible = incompatible_loglike(poset, obs_events, sampling_times, weights, compatible_geno, noise_model, geno_prob_noise)
     
-    if( (i > 1 && (max_loglike >  logkile_incompatible) ) || ( length(compatible_geno$compatible_indexes) <= 0 ) ) {
-      cur_loglik = logkile_incompatible
+    # log_likehood(poset) = (1-alpha)*log_likelihood(comp) + alpha*log_likehood(incomp). When the 
+    # max log_likehood of the previous posets is higher than the current log_likehood(incomp), the 
+    # log_likehood of the current poset will only get smaller, so the inference is not performed 
+    # (time consuming). Unless required for recording the alpha vs. log_likelihood
+    if (i > 1 && (max_loglike >  loglike_incompatible) && !exhaustive_comp_loglik) {
+      cur_loglik = loglike_incompatible
       if(verbose==TRUE) {
-        print("No parameter estimation for this poset. Upper bound likelihood of this poset is less than current maximum likelihood poset!")        
+        print("No parameter estimation for this poset. Upper bound likelihood of this poset is",  
+              "less than current maximum likelihood poset!")        
       }
-    } else{
-      fit = MCEM(poset, obs_events[compatible_geno$compatible_indexes, , drop=FALSE ], sampling_times[compatible_geno$compatible_indexes], max_iter=max_iter,
-                 weights=weights[compatible_geno$compatible_indexes], zeta = zeta, ilambda=ilambda, nrOfSamples=nrOfSamplesForEStep, verbose=verbose, 
-                 maxLambdaValue=maxLambdaValue, lambda_s=lambda_s, sampling_times_available=sampling_times_available)
+    } else if (length(compatible_geno$compatible_indexes) <= 0) {
+      cur_loglik = loglike_incompatible
+      if(verbose==TRUE) {
+        print("No parameter estimation for this poset. No compatible observations with poset!")        
+      }
+    } else {
+      fit = MCEM(poset, obs_events[compatible_geno$compatible_indexes, , drop=FALSE ], 
+                 sampling_times[compatible_geno$compatible_indexes], max_iter=max_iter,
+                 weights=weights[compatible_geno$compatible_indexes], zeta = zeta, ilambda=ilambda, 
+                 nrOfSamples=nrOfSamplesForEStep, verbose=verbose, maxLambdaValue=maxLambdaValue, 
+                 lambda_s=lambda_s, sampling_times_available=sampling_times_available)
       
       lambdas = fit$par
       if(verbose) {
@@ -134,9 +153,11 @@ learn_network_internal <- function(obs_events, sampling_times, max_iter=200, zet
         print(proc.time() - t1)
       }
       t1 = proc.time()
-      cur_loglik = loglike_mixture_model(poset, lambdas, obs_events, sampling_times, weights, nrOfSamplesForLL, compatible_geno, 
-                                         logkile_incompatible, lambda_s, sampling_times_available) 
+      cur_loglik = loglike_mixture_model(poset, lambdas, obs_events, sampling_times, weights, 
+                                         nrOfSamplesForLL, compatible_geno, loglike_incompatible, 
+                                         lambda_s, sampling_times_available) 
     }
+
     
     if(verbose) {
       print(cur_loglik)
