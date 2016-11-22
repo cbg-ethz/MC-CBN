@@ -52,9 +52,10 @@ learn_network <- function(obs_events, sampling_times = NULL, weights=NULL, max_i
 
 
 learn_network_internal <- function(obs_events, sampling_times, max_iter=200, zeta = 0.2, nrOfSamplesForEStep=50,
-                                    nrOfSamplesForLL = 100, weights=NULL, removeZeroWeights=TRUE, noise_model="empty", verbose=FALSE, 
-                                    min_compatible_geno_fraction, maxLambdaValue, lambda_s, sampling_times_available)
-{
+                                    nrOfSamplesForLL = 100, weights=NULL, removeZeroWeights=TRUE,
+                                    noise_model=c("empty", "empty_approx"), verbose=FALSE, min_compatible_geno_fraction=0.5,
+                                    maxLambdaValue=1e6, lambda_s=1.0, sampling_times_available=TRUE) {
+    
   if(sampling_times_available == FALSE) {
     sampling_times = rep(0, nrow(obs_events))
   } 
