@@ -118,11 +118,13 @@ sample_genotypes <- function (n, poset, sampling_param, lambdas, sampling_fn=sam
     T_sampling <- sampling_fn(n, sampling_param, T_sum_events)
   obs_events <- matrix(0, n, p)
   for (i in 1:p) {
-    obs_events[, i] <- as.numeric(T_sum_events[, i] <= T_sampling)
+    indexes =  which(T_sum_events[, i] <= T_sampling)
+    obs_events[indexes, i] <- rbinom(length(indexes), 1, 1-eps)
     
-    change_indexes = which(rbinom(n, 1 , eps) == 1)
-    obs_events[change_indexes, i] <- as.numeric(T_sum_events[change_indexes, i] > T_sampling[change_indexes])
+    indexes =  which(T_sum_events[, i] > T_sampling)
+    obs_events[indexes, i] <- rbinom(length(indexes), 1, eps)
   }
+  
   genotype_list = apply(obs_events, 1, function(x) {
     which(x == 1)
   })
