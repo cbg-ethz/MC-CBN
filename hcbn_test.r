@@ -31,7 +31,7 @@ geno_prob_empirical(N=100000, poset, lambdas, lambda_s, genotype, eps = eps)
 
 
 imp_prob <- function(L, poset, lambdas, lambda_s, genotype, eps) {
-  simGenotypes = sample_genotypes(L, poset, sampling_param = lambda_s, lambdas=lambdas, eps=eps)
+  simGenotypes = sample_genotypes(L, poset, sampling_param = lambda_s, lambdas=lambdas)
   p = ncol(poset)
   probs = apply(simGenotypes$obs_events, 1, function(x) { 
     d = sum(x != genotype)
@@ -40,7 +40,7 @@ imp_prob <- function(L, poset, lambdas, lambda_s, genotype, eps) {
   sum(probs)/L
 }
 
-imp_prob(L=500000, poset, lambdas, lambda_s, genotype, eps = eps)
+imp_prob(L=100, poset, lambdas, lambda_s, genotype, eps = eps)
 
 
 
