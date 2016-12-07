@@ -29,7 +29,7 @@ tdiff_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
   return(apply(simGenotypes$T_events[idx, ], 2, mean))
 }
 
-genotype = simGenotypes$obs_events[5, ]
+genotype = simGenotypes$obs_events[1, ]
 eps = 0.05
 
 geno_prob_empirical(N=100000, poset, lambdas, lambda_s, genotype, eps = eps)
@@ -57,7 +57,41 @@ tdiff_imp <- function(L, poset, lambdas, lambda_s, genotype, eps) {
 }
 
 imp_prob(L=100, poset, lambdas, lambda_s, genotype, eps = eps)
-tdiff_imp(L=10000, poset, lambdas, lambda_s, genotype, eps)
+tdiff_imp(L=100, poset, lambdas, lambda_s, genotype, eps)
 
 
+
+################
+
+MCMC_hcbn <- function(poset, genotypes, sampling_times=NULL, max_iter=100,  zeta = 0.2, nrOfSamples = 5, verbose = TRUE, maxLambdaValue=10^6, lambda_s=1.0)  {
+  p = ncol(poset) # number of mutations
+  
+  
+  # initialize 
+  new_eps
+  new_lambda
+  
+  for(i in 1:maxIter) {
+    
+      # one  EM iteration
+    # E step
+    for(i in 1:nrow(genotypes)) {
+      simGenotypes = sample_genotypes(L, .... new_lambda)
+      hamming_distances = diff(X, Y) for all simGenotypes
+      probs_Y_X = apply(simGenotypes$obs_events, 1 ..., new_eps)
+      Z = simGenotypes$T_events[, mut]
+      
+      expectedD = sum(probs_Y_X * hamming_distances)/ sum(probs_Y_X)
+      expectT = 0.0
+      
+      # rbind
+    }
+      
+    # M step
+    new_eps = mean(expectedD) / p
+    
+    new_lambda = 1 / apply(expectedT, 2, mean)
+  }
+  list(new_lambda, new_eps)
+}
 
