@@ -18,17 +18,22 @@ plot_poset(poset)
 
 
 geno_prob_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
-  simGenotypes = sample_genotypes(N, poset, sampling_param = lambda_s, lambdas=lambdas, eps=eps)
-  sum(apply(simGenotypes$obs_events, 1, function(x) { all(x == genotype) } ))/N
+  simGenotypes = sample_genotypes(N, poset, sampling_param=lambda_s, lambdas=lambdas, eps=eps)
+  sum(apply(simGenotypes$obs_events, 1, function(x) { all(x == genotype) } )) / N
 }
 
-
+tdiff_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
+  simGenotypes = sample_genotypes(N, poset, sampling_param=lambda_s, lambdas=lambdas, eps=eps)
+  idx = which(apply(simGenotypes$obs_events, 1, function(x) { all(x == genotype) } ))
+  
+  return(apply(simGenotypes$T_events[idx, ], 2, mean))
+}
 
 genotype = simGenotypes$obs_events[5, ]
 eps = 0.05
 
 geno_prob_empirical(N=100000, poset, lambdas, lambda_s, genotype, eps = eps)
-
+tdiff_empirical(N=100000, poset, lambdas, lambda_s, genotype, eps = eps)
 
 imp_prob <- function(L, poset, lambdas, lambda_s, genotype, eps) {
   simGenotypes = sample_genotypes(L, poset, sampling_param = lambda_s, lambdas=lambdas)
@@ -40,8 +45,19 @@ imp_prob <- function(L, poset, lambdas, lambda_s, genotype, eps) {
   sum(probs)/L
 }
 
-imp_prob(L=100, poset, lambdas, lambda_s, genotype, eps = eps)
+tdiff_imp <- function(L, poset, lambdas, lambda_s, genotype, eps) {
+  simGenotypes = sample_genotypes(L, poset, sampling_param = lambda_s, lambdas=lambdas)
+  p = ncol(poset)
+  probs = apply(simGenotypes$obs_events, 1, function(x, genotype,eps) { 
+    d = sum(x != genotype)
+    eps^d * (1-eps)^(p-d)
+  }, genotype=genotype, eps=eps)
+  return(apply(simGenotypes$T_events, 2, function(x) sum(x * probs)) / sum(probs))
+  
+}
 
+imp_prob(L=100, poset, lambdas, lambda_s, genotype, eps = eps)
+tdiff_imp(L=10000, poset, lambdas, lambda_s, genotype, eps)
 
 
 
