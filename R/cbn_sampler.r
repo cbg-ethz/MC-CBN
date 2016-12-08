@@ -116,9 +116,10 @@ sample_genotypes <- function (n, poset, sampling_param, lambdas, sampling_fn=sam
   }
   if (is.null(T_sampling)) 
     T_sampling <- sampling_fn(n, sampling_param, T_sum_events)
-  obs_events <- matrix(0, n, p)
+  obs_events = hidden_genotypes = matrix(0, n, p)
   for (i in 1:p) {
     indexes =  which(T_sum_events[, i] <= T_sampling)
+    hidden_genotypes[indexes, i] = 1
     obs_events[indexes, i] <- rbinom(length(indexes), 1, 1-eps)
     
     indexes =  which(T_sum_events[, i] > T_sampling)
@@ -128,7 +129,7 @@ sample_genotypes <- function (n, poset, sampling_param, lambdas, sampling_fn=sam
   genotype_list = apply(obs_events, 1, function(x) {
     which(x == 1)
   })
-  list(n = n, p = p, T_sampling = T_sampling, obs_events = obs_events, 
+  list(n = n, p = p, T_sampling = T_sampling, obs_events = obs_events, hidden_genotypes=hidden_genotypes,
        genotype_list = genotype_list, sampling_param = sampling_param, 
        lambdas = lambdas, T_events = T_events, T_sum_events = T_sum_events, eps=eps)
 }
