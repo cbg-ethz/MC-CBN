@@ -56,12 +56,15 @@ tdiff_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
   return(apply(simGenotypes$T_events[idx, ], 2, mean))
 }
 
-dist_empirical <- function(N, poset, lambdas, lambda_s, genotype) {
+dist_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps = eps) {
   # Compute the average distance between genotype Y (subject to noise) and N
   # possible true genotypes X
   p = ncol(poset)
-  simGenotypes = sample_genotypes(N, poset, sampling_param=lambda_s, lambdas=lambdas)
-  return(sum(apply(simGenotypes$obs_events, 1, hamming_dist, y=genotype)) / N)
+  simGenotypes = sample_genotypes(N, poset, sampling_param=lambda_s, lambdas=lambdas, eps=eps)
+  
+  idx = which(apply(simGenotypes$obs_events, 1, function(x, y) all(x == y),  y=genotype))
+  
+  return(sum(apply(simGenotypes$hidden_genotypes[idx, ], 1, hamming_dist, y=genotype)) / length(idx))
 }
 
 prob_imp <- function(L, poset, lambdas, lambda_s, genotype, eps) {
@@ -231,8 +234,8 @@ X = possible_genotypes(p)
 X_comp = apply(X, 1, is_compatible, poset=poset)
 X_comp = X[X_comp, ]
 mean(apply(X_comp, 1, hamming_dist, y=genotype))
-dist_empirical(N=100000, poset, lambdas, lambda_s, genotype)
-dist_imp(L=100, poset, lambdas, lambda_s, genotype, eps)
+dist_empirical(N=100000, poset, lambdas, lambda_s, genotype, eps)
+dist_imp(L=100000, poset, lambdas, lambda_s, genotype, eps)
 
 ret = MCMC_hcbn(poset, simulated_obs$obs_events)
 abs(ret$lambdas - lambdas)/lambdas
