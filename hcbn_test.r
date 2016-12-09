@@ -37,6 +37,36 @@ gen_genotype <- function(p, idx) {
   return(g)
 }
 
+complete_log_likelihood <- function(lambdas, Tdiff, dist, eps) {
+  p = length(lambdas)
+  n = length(dist)
+  llhood = N * sum(log(lambdas)) - sum(lambdas * t(Tdiff)) + 
+    p * log(eps) * sum(dist) + p * log(1-eps) * sum(p - dist)
+  return(llhood)
+}
+
+obs_log_likelihood <- function(obs_events, poset, lambdas, lambda_s, eps, 
+                               L=1000, exact=FALSE) {
+  if (exact) {
+    p = length(lambdas)
+    N = nrow(obs_events)
+    llhood = 0 
+    for (j in 1:p) {
+      mutated = sum(obs_events[, j] == 1)
+      Pr_X_0 = lambda_s/(lambda_s + lambdas[j])
+      Pr_X_1 = lambdas[j]/(lambda_s + lambdas[j])
+      llhood = llhood + mutated * log(eps * Pr_X_0 + (1-eps) * Pr_X_1)
+      llhood = llhood + (N - mutated) * log((1-eps) * Pr_X_0 + eps * Pr_X_1)
+    } 
+  } else {
+    prob_Y = apply(obs_events, 1, prob_imp, L=L, poset=poset, lambdas=lambdas, 
+                   lambda_s=lambda_s, eps=eps)
+    llhood = sum(log(prob_Y))
+  }
+  
+  return(llhood)
+}
+
 geno_prob_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
   # Compute P(genotype) empirically
   simGenotypes = sample_genotypes(N, poset, sampling_param=lambda_s, lambdas=lambdas,
@@ -45,7 +75,6 @@ geno_prob_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
                    function(x, y) all(x == y), y=genotype)) / N)
 }
 
-# why samples are generated with noise? 
 tdiff_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
   # Compute the time differences expirically for a given genotype
   simGenotypes = sample_genotypes(N, poset, sampling_param=lambda_s, lambdas=lambdas,
@@ -56,33 +85,38 @@ tdiff_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
   return(apply(simGenotypes$T_events[idx, ], 2, mean))
 }
 
-dist_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps = eps) {
+dist_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
   # Compute the average distance between genotype Y (subject to noise) and N
   # possible true genotypes X
   p = ncol(poset)
   simGenotypes = sample_genotypes(N, poset, sampling_param=lambda_s, lambdas=lambdas, eps=eps)
-  
   idx = which(apply(simGenotypes$obs_events, 1, function(x, y) all(x == y),  y=genotype))
   
   return(sum(apply(simGenotypes$hidden_genotypes[idx, ], 1, hamming_dist, y=genotype)) / length(idx))
 }
 
-prob_imp <- function(L, poset, lambdas, lambda_s, genotype, eps) {
+prob_imp <- function(genotype, L, poset, lambdas, lambda_s, eps) {
   # Compute Pr(genotype) using Monte Carlo sampling
+  # Generate L samples from poset with parameters 'lambdas' and 'lambda_s'. In 
+  # particular epsilon is zero (default value)
   simGenotypes = sample_genotypes(L, poset, sampling_param=lambda_s, lambdas=lambdas)
   p = ncol(poset)
-  probs = apply(simGenotypes$obs_events, 1, function(x, y, e, p) { 
-    d = sum(x != y)
-    e^d * (1-e)^(p-d)
-  }, y=genotype, e=eps, p=p)
+  d = apply(simGenotypes$hidden_genotypes, 1, hamming_dist, y=genotype)
+  probs = eps^d * (1-eps)^(p-d)
+  # probs = apply(simGenotypes$obs_events, 1, function(x, y, e, p) { 
+  #   d = sum(x != y)
+  #   e^d * (1-e)^(p-d)
+  # }, y=genotype, e=eps, p=p)
   return(sum(probs) / L)
 }
 
 tdiff_imp <- function(L, poset, lambdas, lambda_s, genotype, eps) {
   # Compute expected time differences for a given genotype using Monte Carlo sampling
   p = ncol(poset)
+  # Generate L samples from poset with parameters 'lambdas' and 'lambda_s'. In 
+  # particular epsilon is zero (default value)
   simGenotypes = sample_genotypes(L, poset, sampling_param=lambda_s, lambdas=lambdas)
-  dist = apply(simGenotypes$obs_events, 1, hamming_dist, y=genotype)
+  dist = apply(simGenotypes$hidden_genotypes, 1, hamming_dist, y=genotype)
   probs = eps^dist * (1-eps)^(p-dist)
 
   return(apply(simGenotypes$T_events, 2, function(x) sum(x * probs)) / sum(probs))
@@ -93,7 +127,7 @@ dist_imp <- function(L, poset, lambdas, lambda_s, genotype, eps) {
   # underlying/true genotype using Monte Carlo sampling
   p = ncol(poset)
   simGenotypes = sample_genotypes(L, poset, sampling_param=lambda_s, lambdas=lambdas)
-  dist = apply(simGenotypes$obs_events, 1, hamming_dist, y=genotype)
+  dist = apply(simGenotypes$hidden_genotypes, 1, hamming_dist, y=genotype)
   probs = eps^dist * (1-eps)^(p-dist)
   return(sum(dist * probs) / sum(probs))
 }
@@ -113,7 +147,7 @@ MCMC_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0, max_
   }
   
   # initialize parameters
-  eps = runif(1)
+  eps = runif(1, 0, 0.5)
   lambdas = initialize_lambda(obs_events=obs_events, average_sampling_times=avg_sampling_t,
                               poset=poset, verbose=verbose)
   
@@ -130,7 +164,7 @@ MCMC_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0, max_
     # Compute expected_dist
     expected_dist = numeric(N)
     expected_Tdiff = matrix(0, nrow=N, ncol=p)
-    for(i in 1:nrow(obs_events)) {
+    for(i in 1:N) {
       # Draw L samples from poset with parameters "lambdas" 
       simGenotypes = sample_genotypes(L, poset=poset, sampling_param=lambda_s,
                                       lambdas=lambdas)
@@ -156,8 +190,7 @@ MCMC_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0, max_
       lambdas[idx] = max_lambda_val
     }
     
-    llhood = N * sum(log(lambdas)) - sum(lambdas * t(expected_Tdiff)) + 
-      p * log(eps) * sum(expected_dist) + p * log(1-eps) * sum(p - expected_dist)
+    llhood = complete_log_likelihood(lambdas, expected_Tdiff, expected_dist, eps)
     
     if (verbose) {
       cat("Iteration:", iter, "- Log-likelihood: ", llhood, "\n")
@@ -193,13 +226,15 @@ simulated_obs = sample_genotypes(N, poset, sampling_param=lambda_s, lambdas=lamb
 
 plot_poset(poset)
 
+################ TEST1 ################
+# P(Y)
 prob_empirical = numeric(N)
 prob_sampling  = numeric(N)
 for (i in 1:N) {
   genotype = simulated_obs$obs_events[i, ]
   prob_empirical[i] = geno_prob_empirical(N=100000, poset, lambdas, lambda_s, genotype, 
                                           eps = eps)
-  prob_sampling[i] = prob_imp(L=100, poset, lambdas, lambda_s, genotype, eps = eps)
+  prob_sampling[i] = prob_imp(genotype, L=100, poset, lambdas, lambda_s, eps=eps)
 }
 
 df = data.frame(x = prob_empirical, y = prob_sampling)
@@ -212,11 +247,13 @@ pl = pl + geom_point() +
 
 pl
 
+# Time differences 
 time_diff_empirical = matrix(0, ncol=p, nrow=N)
 time_diff_sampling  = matrix(0, ncol=p, nrow=N)
 for (i in 1:N) {
   genotype = simulated_obs$obs_events[i, ]
-  time_diff_empirical[i, ] = tdiff_empirical(N=100000, poset, lambdas, lambda_s, genotype, eps = eps)
+  time_diff_empirical[i, ] = tdiff_empirical(N=100000, poset, lambdas, lambda_s,
+                                             genotype, eps=eps)
   time_diff_sampling[i, ] = tdiff_imp(L=100, poset, lambdas, lambda_s, genotype, eps)
 }
 
@@ -230,13 +267,90 @@ pl = pl + geom_point() +
 
 pl
 
+# Hamming distance 
 X = possible_genotypes(p)
 X_comp = apply(X, 1, is_compatible, poset=poset)
 X_comp = X[X_comp, ]
 mean(apply(X_comp, 1, hamming_dist, y=genotype))
-dist_empirical(N=100000, poset, lambdas, lambda_s, genotype, eps)
-dist_imp(L=100000, poset, lambdas, lambda_s, genotype, eps)
 
+d_empirical = numeric(N)
+d_sampling  = numeric(N)
+for (i in 1:N) {
+  genotype = simulated_obs$obs_events[i, ]
+  d_empirical[i] = dist_empirical(N=100000, poset, lambdas, lambda_s, genotype,
+                                  eps=eps)
+  d_sampling[i] = dist_imp(L=100, poset, lambdas, lambda_s, genotype, eps)
+}
+
+df = data.frame(x = d_empirical, y = d_sampling)
+pl = ggplot(df, aes(x = x, y = y))
+pl = pl + geom_point() + 
+  geom_abline(intercept = 0, slope = 1, colour="blue") + 
+  labs(x = "\nEmpirical distance", y = "Estimated distance\n" ) +
+  theme_bw() +
+  theme(text=element_text(size=14))
+
+pl
+
+################ TEST2 ################
+set.seed(10)
+dist = rowSums(simulated_obs$obs_events != simulated_obs$hidden_genotypes)
+llhood = complete_log_likelihood(lambdas, simulated_obs$T_events, dist, eps)
+obs_log_likelihood(simulated_obs$obs_events, poset, lambdas, lambda_s, 
+                   eps, L=10000) #-267.8936
+
+# MC-CBN, error model: h-cbn
 ret = MCMC_hcbn(poset, simulated_obs$obs_events)
 abs(ret$lambdas - lambdas)/lambdas
 abs(ret$avg_lambdas - lambdas)/lambdas
+abs(ret$eps - eps)
+abs(ret$llhood - llhood)
+obs_log_likelihood(simulated_obs$obs_events, poset, ret$avg_lambdas, lambda_s, 
+                   ret$avg_eps, L=10000) #-268.4495
+
+# MC-CBN, error model: mixture model
+compatible_idx = apply(simulated_obs$obs_events, 1, is_compatible, poset=poset)
+ret_mixture = estimate_mutation_rates(poset, 
+                                      simulated_obs$obs_events[compatible_idx, ])
+abs(ret_mixture$par - lambdas)/lambdas
+ret_mixture$ll #-432.9113
+
+# hcbn
+system(paste("/Users/susanap/Documents/software/ct-cbn-0.1.04b/h-cbn -f", 
+             "/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5", 
+             "-w -v > /Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5.out.txt"))
+lambdas_hcbn = read.csv("/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5.lambda")
+lambdas_hcbn = as.vector(t(lambdas_hcbn))
+abs(lambdas_hcbn - lambdas)/lambdas
+
+# sanity check (h-cbn report -267.308)
+obs_log_likelihood(simulated_obs$obs_events, poset, lambdas_hcbn, lambda_s, 
+                   0.034023, L=10000) # -268.256
+
+################ TEST3 ################
+set.seed(10)
+# empty poset
+poset = matrix(0, p, p)
+
+simulated_obs = sample_genotypes(N, poset, sampling_param=lambda_s, lambdas=lambdas,
+                                 eps=eps)
+
+obs_log_likelihood(simulated_obs$obs_events, poset, lambdas, lambda_s, eps, 
+                   exact=TRUE) # -340.4663
+
+# MC-CBN, error model: h-cbn
+ret = MCMC_hcbn(poset, simulated_obs$obs_events)
+obs_log_likelihood(simulated_obs$obs_events, poset, ret$avg_lambdas, lambda_s, 
+                   ret$avg_eps, L=10000) # -305.5238
+
+#write.csv(cbind(rep(1, N), simulated_obs$obs_events), "Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5_empty.pat", row.names=FALSE)
+system(paste("/Users/susanap/Documents/software/ct-cbn-0.1.04b/h-cbn -f", 
+             "/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5_empty", 
+             "-w -v > /Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5_empty.out.txt"))
+lambdas_hcbn = read.csv("/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5_empty.lambda")
+lambdas_hcbn = as.vector(t(lambdas_hcbn))
+abs(lambdas_hcbn - lambdas)/lambdas
+
+# sanity check (h-cbn report -302.451)
+obs_log_likelihood(simulated_obs$obs_events, poset, lambdas_hcbn, lambda_s, 
+                   0.000012, L=10000) # -302.5706
