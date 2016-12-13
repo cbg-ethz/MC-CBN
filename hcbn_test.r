@@ -124,9 +124,11 @@ ret_mixture$ll ## N=100, L=5, -432.9113
 
 # hcbn
 filename = paste("simulated_obs_n", N, "_p", p, sep="")
-write.csv(cbind(rep(1, N), simulated_obs$obs_events), 
-          file.path(datadir, paste(filename, ".pat", sep="")),
-          row.names=FALSE)
+write(c(N, p+1), file.path(datadir, paste(filename, ".pat", sep="")))
+write.table(cbind(rep(1, N), simulated_obs$obs_events), 
+            file.path(datadir, paste(filename, ".pat", sep="")),
+            row.names=FALSE, col.names=FALSE, append=TRUE)
+
 system(paste(hcbn_path, "h-cbn -f", datadir, filename, " -w -v > ", datadir,
              filename, ".out.txt", sep=""))
 lambdas_hcbn = read.csv(file.path(datadir, paste(filename, ".lambda", sep="")))
@@ -154,9 +156,10 @@ obs_log_likelihood(simulated_obs$obs_events, poset, ret$avg_lambdas, lambda_s,
                    ret$avg_eps, L=10000) # N=100, -305.5238; N=1000, -3109.656
 
 filename = paste("simulated_obs_n", N, "_p", p, "_empty", sep="")
-write.csv(cbind(rep(1, N), simulated_obs$obs_events), 
-          file.path(datadir, paste(filename, ".pat", sep="")),
-          row.names=FALSE)
+write(c(N, p+1), file.path(datadir, paste(filename, ".pat", sep="")))
+write.table(cbind(rep(1, N), simulated_obs$obs_events), 
+            file.path(datadir, paste(filename, ".pat", sep="")),
+            row.names=FALSE, col.names=FALSE, append=TRUE)
 system(paste(hcbn_path, "h-cbn -f ", datadir, filename, " -w -v > ", datadir,
              filename, ".out.txt", sep=""))
 lambdas_hcbn = read.csv(file.path(datadir, paste(filename, ".lambda", sep="")))
