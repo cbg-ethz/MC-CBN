@@ -10,8 +10,10 @@ set.seed(10)
 p = 5                      # number of events
 poset = random_poset(p)    # true poset
 lambda_s = 1               # sampling rate
-N = 100                    # number of observations / genotypes
+N = 1000                   # number of observations / genotypes
 eps = 0.05
+hcbn_path = "/Users/susanap/Documents/software/ct-cbn-0.1.04b/"
+datadir = "/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/"
 ##################################################
 
 hamming_dist <- function(x, y) {
@@ -103,10 +105,6 @@ prob_imp <- function(genotype, L, poset, lambdas, lambda_s, eps) {
   p = ncol(poset)
   d = apply(simGenotypes$hidden_genotypes, 1, hamming_dist, y=genotype)
   probs = eps^d * (1-eps)^(p-d)
-  # probs = apply(simGenotypes$obs_events, 1, function(x, y, e, p) { 
-  #   d = sum(x != y)
-  #   e^d * (1-e)^(p-d)
-  # }, y=genotype, e=eps, p=p)
   return(sum(probs) / L)
 }
 
@@ -306,26 +304,29 @@ abs(ret$avg_lambdas - lambdas)/lambdas
 abs(ret$eps - eps)
 abs(ret$llhood - llhood)
 obs_log_likelihood(simulated_obs$obs_events, poset, ret$avg_lambdas, lambda_s, 
-                   ret$avg_eps, L=10000) #-268.4495
+                   ret$avg_eps, L=10000) ## N=100, L=100, -268.4495
 
 # MC-CBN, error model: mixture model
 compatible_idx = apply(simulated_obs$obs_events, 1, is_compatible, poset=poset)
 ret_mixture = estimate_mutation_rates(poset, 
                                       simulated_obs$obs_events[compatible_idx, ])
 abs(ret_mixture$par - lambdas)/lambdas
-ret_mixture$ll #-432.9113
+ret_mixture$ll ## N=100, L=5, -432.9113
 
 # hcbn
-system(paste("/Users/susanap/Documents/software/ct-cbn-0.1.04b/h-cbn -f", 
-             "/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5", 
-             "-w -v > /Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5.out.txt"))
-lambdas_hcbn = read.csv("/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5.lambda")
+filename = paste("simulated_obs_n", N, "_p", p, sep="")
+write.csv(cbind(rep(1, N), simulated_obs$obs_events), 
+          file.path(datadir, paste(filename, ".pat", sep="")),
+          row.names=FALSE)
+system(paste(hcbn_path, "h-cbn -f", datadir, filename, " -w -v > ", datadir,
+             filename, ".out.txt", sep=""))
+lambdas_hcbn = read.csv(file.path(datadir, paste(filename, ".lambda", sep="")))
 lambdas_hcbn = as.vector(t(lambdas_hcbn))
 abs(lambdas_hcbn - lambdas)/lambdas
 
 # sanity check (h-cbn report -267.308)
 obs_log_likelihood(simulated_obs$obs_events, poset, lambdas_hcbn, lambda_s, 
-                   0.034023, L=10000) # -268.256
+                   0.034023, L=10000) # N=100, -268.256
 
 ################ TEST3 ################
 set.seed(10)
@@ -336,21 +337,23 @@ simulated_obs = sample_genotypes(N, poset, sampling_param=lambda_s, lambdas=lamb
                                  eps=eps)
 
 obs_log_likelihood(simulated_obs$obs_events, poset, lambdas, lambda_s, eps, 
-                   exact=TRUE) # -340.4663
+                   exact=TRUE) # N=100, -340.4663; N=1000, -3374.1
 
 # MC-CBN, error model: h-cbn
 ret = MCMC_hcbn(poset, simulated_obs$obs_events)
 obs_log_likelihood(simulated_obs$obs_events, poset, ret$avg_lambdas, lambda_s, 
-                   ret$avg_eps, L=10000) # -305.5238
+                   ret$avg_eps, L=10000) # N=100, -305.5238; N=1000, -3109.656
 
-#write.csv(cbind(rep(1, N), simulated_obs$obs_events), "Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5_empty.pat", row.names=FALSE)
-system(paste("/Users/susanap/Documents/software/ct-cbn-0.1.04b/h-cbn -f", 
-             "/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5_empty", 
-             "-w -v > /Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5_empty.out.txt"))
-lambdas_hcbn = read.csv("/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/simulated_obs_n100_p5_empty.lambda")
+filename = paste("simulated_obs_n", N, "_p", p, "_empty", sep="")
+write.csv(cbind(rep(1, N), simulated_obs$obs_events), 
+          file.path(datadir, paste(filename, ".pat", sep="")),
+          row.names=FALSE)
+system(paste(hcbn_path, "h-cbn -f ", datadir, filename, " -w -v > ", datadir,
+             filename, ".out.txt", sep=""))
+lambdas_hcbn = read.csv(file.path(datadir, paste(filename, ".lambda", sep="")))
 lambdas_hcbn = as.vector(t(lambdas_hcbn))
 abs(lambdas_hcbn - lambdas)/lambdas
 
-# sanity check (h-cbn report -302.451)
+# sanity check (h-cbn report (N = 100)-302.451, (N = 1000) -3099.03)
 obs_log_likelihood(simulated_obs$obs_events, poset, lambdas_hcbn, lambda_s, 
-                   0.000012, L=10000) # -302.5706
+                   0.000036, L=10000) # N=100, -302.5706; N=1000, -3101.905
