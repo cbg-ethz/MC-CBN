@@ -40,7 +40,7 @@ prob_sampling  = numeric(N)
 for (i in 1:N) {
   genotype = simulated_obs$obs_events[i, ]
   prob_empirical[i] = geno_prob_empirical(N=100000, poset, lambdas, lambda_s, genotype, 
-                                          eps = eps)
+                                          eps=eps)
   prob_sampling[i] = prob_imp(genotype, L=100, poset, lambdas, lambda_s, eps=eps)
 }
 

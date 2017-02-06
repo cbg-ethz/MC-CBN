@@ -82,7 +82,8 @@ dist_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
 prob_imp <- function(genotype, L, poset, lambdas, lambda_s, eps) {
   # Compute Pr(genotype) using Monte Carlo sampling
   # Generate L samples from poset with parameters 'lambdas' and 'lambda_s'. In 
-  # particular epsilon is zero (default value)
+  # particular epsilon is zero (default value) - because the idea is to generate
+  # samples of X (underlying true)
   simGenotypes = sample_genotypes(L, poset, sampling_param=lambda_s, lambdas=lambdas)
   p = ncol(poset)
   d = apply(simGenotypes$hidden_genotypes, 1, hamming_dist, y=genotype)
