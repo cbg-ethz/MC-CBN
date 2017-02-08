@@ -89,9 +89,6 @@ dist_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
 }
 
 
-
-
-
 tdiff_imp <- function(L, poset, lambdas, lambda_s, genotype, eps) {
   # Compute expected time differences for a given genotype using Monte Carlo sampling
   p = ncol(poset)
@@ -571,9 +568,6 @@ importance_weight <- function(genotype, L, poset, lambdas, lambda_s, eps,
 }
 
 
-## **TODO** ##
-# merge prob_imp and prob_importance_sampling. E.g., include argument 'sampling'
-# with options 'random' and 'ar' (stands for the type of moves, add and remove)
 prob_importance_sampling <- function(genotype, L, poset, lambdas, lambda_s, 
                                      eps, sampling_time=NULL, 
                                      sampling=c('naive', 'add-remove')) {
@@ -586,6 +580,7 @@ prob_importance_sampling <- function(genotype, L, poset, lambdas, lambda_s,
   #          proposal. First, making genotypes compatible with the poset by
   #          either adding or removing observations. Second, perturbing this 
   #          version by adding or removing observations. 
+  # NOTE: If 'naive' sampling is employed, sampling times are not used. 
   
   sampling = match.arg(sampling)
   
@@ -594,8 +589,10 @@ prob_importance_sampling <- function(genotype, L, poset, lambdas, lambda_s,
     # Generate L samples from poset with parameters 'lambdas' and 'lambda_s'. In 
     # particular epsilon is zero (default value) - because the idea is to generate
     # samples of X (underlying true)
+    ### **TODO** ### If sampling times available, not considered to generate 
+    # samples
     samples = sample_genotypes(L, poset, sampling_param=lambda_s, lambdas=lambdas)
-    p = ncol(poset)
+    p = ncol(poset) # number of events/mutations
     d = apply(samples$hidden_genotypes, 1, hamming_dist, y=genotype)
     probs = eps^d * (1-eps)^(p-d)
     
@@ -621,4 +618,79 @@ tdiff_importance_sampling <- function(genotype, L, poset, lambdas, lambda_s, eps
   
   return(colSums(importance_weights$w * importance_weights$time_differences) / 
            sum(importance_weights$w))
+}
+
+
+empirical_vs_sampling <- function(events, L, rep=NULL, one_genotype=FALSE, 
+                                  sampling_times=NULL, 
+                                  sampling=c('naive', 'add-remove'), outdir,
+                                  outname="", binwidth=0.01) {
+  
+  # events         matrix of observations or single genotype, if 'one_genotype' 
+  #                is TRUE 
+  # L              number of samples
+  # rep            if only one genotype is provided, number of repetitions
+  # one_genotype   boolean variable indicating if only one genotype is provided
+  # sampling_times vector of sampling times per event. 
+  # sampling       type of sampling. OPTIONS: 'naive' or 'add-remove'.
+  # NOTE: If 'naive' sampling is employed, sampling times are not used. 
+  
+  sampling = match.arg(sampling)
+  
+  if (one_genotype) {
+    if (length(sampling_times) > 1) {
+      warning("Only one sampling time was expected. First entry of vector ", 
+               "\'sampling_times\' is used.")
+      sampling_times = sampling_times[1]
+    }
+    genotype = events
+    sampling_time = sampling_times
+    N = rep
+  } else {
+    N = nrow(events)
+  }
+  
+  prob_empirical = numeric(N)
+  prob_sampling  = numeric(N)
+  
+  for (i in 1:N) {
+    if (!one_genotype) {
+      genotype = simulated_obs$obs_events[i, ]
+      sampling_time = sampling_times[i]
+    }
+    prob_empirical[i] = geno_prob_empirical(N=100000, poset, lambdas, lambda_s, 
+                                            genotype, eps=eps)
+    prob_sampling[i] = prob_importance_sampling(genotype, L=L, poset, lambdas, 
+                                                lambda_s, eps=eps, 
+                                                sampling_time=sampling_time,
+                                                sampling=sampling)
+  }
+  
+  outdir = file.path(outdir, paste("L", L, "_", sampling, sep=""))
+  if (!dir.exists(outdir)) {
+    dir.create(outdir)
+  }
+  outname = file.path(outdir, paste("probability_Y_empirical_vs_sampling", 
+                                    outname, ".pdf", sep=""))
+  
+  if (one_genotype) {
+    df = data.frame(x=c(prob_empirical, prob_sampling), 
+                    method=c(rep("empirical", N), rep("sampling", N)))
+    pl = ggplot(df, aes(x = x, fill = method))
+    pl = pl + geom_histogram(binwidth=binwidth, alpha=0.5, position="identity") + 
+      labs(x=expression(P(Y)), y="Frequency") + 
+      theme_bw() + theme(text=element_text(size=14))
+    
+  } else {
+    df = data.frame(x = prob_empirical, y = prob_sampling)
+    pl = ggplot(df, aes(x = x, y = y))
+    pl = pl + geom_point() + 
+      geom_abline(intercept = 0, slope = 1, colour="blue") + 
+      xlab(expression(P[empirical](Y))) + ylab(expression(widehat(P)(Y)~"\n")) +
+      theme_bw() + theme(text=element_text(size=14))
+    
+  }
+  ggsave(outname, pl, width=5, height=3)
+  
+  return(list("empirical" = prob_empirical, "sampling" = prob_sampling))
 }
