@@ -1,17 +1,17 @@
 library(mccbn)
 library(doMC)
 
-################## INPUT OPTIONS ##################
+############################### INPUT OPTIONS ################################
 L = 100                             # number of repetitions
 p = seq(4, 12, 2)                   # number of events
 lambda_s = 1                        # sampling rate
-N = unlist(lapply(50*p, min, 1000)) # number of observations / genotypes
+N = sapply(50*p, min, 1000)         # number of observations / genotypes
 eps = 0.05
 thrds = 4
 hcbn_path = "/Users/susanap/Documents/software/ct-cbn-0.1.04b/"
 datadir = "/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/"
 mccbn_path = "/Users/susanap/Documents/software/MC-CBN"
-##################################################
+###############################################################################
 
 source(file.path(mccbn_path, "hcbn_functions.r"))
 
@@ -45,7 +45,7 @@ runtime_hcbn            = matrix(0, nrow=length(p), ncol=L)
 
 for (i in 1:length(p)) {
   res = foreach(j = 1:L, .combine=rbind) %dopar% {
-    poset = make_random_poset(p[i])
+    poset = random_poset(p[i]) 
     lambdas = runif(p[i], 1/3*lambda_s, 3*lambda_s)
     simulated_obs = sample_genotypes(N[i], poset, sampling_param=lambda_s, 
                                      lambdas=lambdas, eps=eps)

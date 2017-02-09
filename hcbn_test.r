@@ -6,7 +6,7 @@ library(ggplot2)
 # Set seed for reproducibility
 set.seed(10)
 
-################## INPUT OPTIONS ##################
+############################### INPUT OPTIONS ################################
 p = 5                      # number of events
 poset = random_poset(p)    # true poset
 lambda_s = 1               # sampling rate
@@ -16,19 +16,20 @@ hcbn_path = "/Users/susanap/Documents/software/ct-cbn-0.1.04b/"
 datadir = "/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/"
 outdir = "/Users/susanap/Documents/hivX/CBN/hcbn_sampling/output/" 
 mccbn_path = "/Users/susanap/Documents/software/MC-CBN"
-##################################################
+###############################################################################
 
 source(file.path(mccbn_path, "hcbn_functions.r"))
 
-###################################################################################
+###############################################################################
 ### MAIN PROGRAM
-###################################################################################
-# generate p random mutation rates uniformly distributed between lambda_s/3 to 3lambda_s.  
+###############################################################################
+# generate p random mutation rates uniformly distributed between lambda_s/3 to 
+# 3 lambda_s.  
 lambdas = runif(p, 1/3*lambda_s, 3*lambda_s)
 
 # Simulate genotypes and sequencing times consistent with poset and mutation rates
-# Sampling times are generated assuming they are exponentially distributed with rate
-# lambda_s 
+# Sampling times are generated assuming they are exponentially distributed with 
+# rate lambda_s 
 simulated_obs = sample_genotypes(N, poset, sampling_param=lambda_s, lambdas=lambdas,
                                  eps=eps)
 
@@ -39,83 +40,76 @@ plot_poset(poset)
 ###############################################################################
 ### TEST 1
 ###############################################################################
-# Check how well the sampling scheme approximates P(Y), Expected time differences 
-# and expected distance
-###################### P(Y) ######################
+# Check how well the sampling scheme approximates P(Y), Expected time 
+# differences and expected distance
+#################################### P(Y) #####################################
 L = 1000
-# binwidth: L=10 0.1; 
-probs = empirical_vs_sampling(simulated_obs$obs_events, L=L, sampling='naive', 
-                              outdir=outdir, outname=paste("_N", N, "_L", L, sep=""))
+# binwidth: L=10 0.1; L=1000 0.01
+probs = prob_empirical_vs_sampling(simulated_obs$obs_events, L=L,  
+                                   sampling='naive', outdir=outdir, 
+                                   outname=paste("_N", N, "_L", L, sep=""))
+save(probs, file=file.path(outdir, paste("L", L, "_naive", sep=""), 
+                           paste("probability_Y_N", N, "_L", L, ".RData",
+                                 sep="")))
 
 # One genotype
 genotype = simulated_obs$obs_events[1, ] 
-probs = empirical_vs_sampling(genotype, L=L, rep=N, one_genotype=TRUE,
-                              sampling='naive', outdir=outdir, 
-                              outname=paste("_g1_rep", N, "_L", L, sep=""), 
-                              binwidth=0.01)
+probs = prob_empirical_vs_sampling(genotype, L=L, rep=N, one_genotype=TRUE, 
+                                   sampling='naive', outdir=outdir, 
+                                   outname=paste("_g1_rep", N, "_L", L, sep=""), 
+                                   binwidth=0.01)
+save(probs, file=file.path(outdir, paste("L", L, "_naive", sep=""), 
+                           paste("probability_Y_g1_rep", N, "_L", L, ".RData",
+                                 sep="")))
 
 # WT
 genotype = rep(0, p)
-probs = empirical_vs_sampling(genotype, L=L, rep=N, one_genotype=TRUE, 
-                              sampling='naive', outdir=outdir,
-                              outname=paste("_WT_rep", N, "_L", L, sep=""),
-                              binwidth=0.01)
+probs = prob_empirical_vs_sampling(genotype, L=L, rep=N, one_genotype=TRUE, 
+                                   sampling='naive', outdir=outdir,
+                                   outname=paste("_WT_rep", N, "_L", L, sep=""),
+                                   binwidth=0.01)
+save(probs, file=file.path(outdir, paste("L", L, "_naive", sep=""), 
+                           paste("probability_Y_WT_rep", N, "_L", L, ".RData",
+                                 sep="")))
 
 # Resistant type
 genotype = rep(1, p)
-probs = empirical_vs_sampling(genotype, L=L, rep=N, one_genotype=TRUE, 
-                              sampling='naive', outdir=outdir,
-                              outname=paste("_RT_rep", N, "_L", L, sep=""),
-                              binwidth=0.01)
+probs = prob_empirical_vs_sampling(genotype, L=L, rep=N, one_genotype=TRUE, 
+                                   sampling='naive', outdir=outdir,
+                                   outname=paste("_RT_rep", N, "_L", L, sep=""),
+                                   binwidth=0.01)
+save(probs, file=file.path(outdir, paste("L", L, "_naive", sep=""), 
+                           paste("probability_Y_RT_rep", N, "_L", L, ".RData",
+                                 sep="")))
 
-###################### Expected time differences ######################
-time_diff_empirical = matrix(0, ncol=p, nrow=N)
-time_diff_sampling  = matrix(0, ncol=p, nrow=N)
-for (i in 1:N) {
-  genotype = simulated_obs$obs_events[i, ]
-  time_diff_empirical[i, ] = tdiff_empirical(N=100000, poset, lambdas, lambda_s,
-                                             genotype, eps=eps)
-  time_diff_sampling[i, ] = tdiff_imp(L=100, poset, lambdas, lambda_s, genotype, eps)
-}
+########################## Expected time differences ##########################
+set.seed(10)
+time_diff = tdiff_empirical_vs_sampling(simulated_obs$obs_events, L=L,  
+                                        sampling='naive', outdir=outdir, 
+                                        outname=paste("_N", N, "_L", L, sep=""))
+save(time_diff, file=file.path(outdir, paste("L", L, "_naive", sep=""), 
+                               paste("time_diff_N", N, "_L", L, ".RData", 
+                                     sep="")))
 
-df = data.frame(x = time_diff_empirical[, 2], y = time_diff_sampling[, 2])
-pl = ggplot(df, aes(x = x, y = y))
-pl = pl + geom_point() + 
-  geom_abline(intercept = 0, slope = 1, colour="blue") + 
-  labs(x=expression('Empirical'~Z[2]), y=expression('Estimated'~Z[2]~'')) +
-  theme_bw() +
-  theme(text=element_text(size=14))
+############################## Expected distance ############################## 
+set.seed(10)
+dist = dist_empirical_vs_sampling(simulated_obs$obs_events, L=L, 
+                                  sampling='naive', outdir=outdir, 
+                                  outname=paste("_N", N, "_L", L, sep=""))
+save(dist, file=file.path(outdir, paste("L", L, "_naive", sep=""), 
+                          paste("hamming_dist_N", N, "_L", L, ".RData", sep="")))
 
-pl
-
-# Hamming distance 
 X = possible_genotypes(p)
 X_comp = apply(X, 1, is_compatible, poset=poset)
 X_comp = X[X_comp, ]
 mean(apply(X_comp, 1, hamming_dist, y=genotype))
 
-d_empirical = numeric(N)
-d_sampling  = numeric(N)
-for (i in 1:N) {
-  genotype = simulated_obs$obs_events[i, ]
-  d_empirical[i] = dist_empirical(N=100000, poset, lambdas, lambda_s, genotype,
-                                  eps=eps)
-  d_sampling[i] = dist_imp(L=100, poset, lambdas, lambda_s, genotype, eps)
-}
-
-df = data.frame(x = d_empirical, y = d_sampling)
-pl = ggplot(df, aes(x = x, y = y))
-pl = pl + geom_point() + 
-  geom_abline(intercept = 0, slope = 1, colour="blue") + 
-  labs(x = "\nEmpirical distance", y = "Estimated distance\n" ) +
-  theme_bw() +
-  theme(text=element_text(size=14))
-
-pl
 
 ###############################################################################
 ### TEST 2
 ###############################################################################
+# Check that observed log-likelihood is similar among truth (approximate), 
+# MC-CBN using H-CBN error model and mixture model, and H-CBN
 set.seed(10)
 dist = rowSums(simulated_obs$obs_events != simulated_obs$hidden_genotypes)
 llhood = complete_log_likelihood(lambdas, simulated_obs$T_events, dist, eps)
@@ -158,6 +152,8 @@ obs_log_likelihood(simulated_obs$obs_events, poset, lambdas_hcbn, lambda_s,
 ###############################################################################
 ### TEST 3
 ###############################################################################
+# Comparison between truth (exact) and MC-CBN using H-CBN error model. For the
+# empty poset, observed log-likelihood can be computed exactly
 set.seed(10)
 # empty poset
 poset = matrix(0, p, p)
