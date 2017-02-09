@@ -89,27 +89,606 @@ dist_empirical <- function(N, poset, lambdas, lambda_s, genotype, eps) {
 }
 
 
-tdiff_imp <- function(L, poset, lambdas, lambda_s, genotype, eps) {
-  # Compute expected time differences for a given genotype using Monte Carlo sampling
-  p = ncol(poset)
-  # Generate L samples from poset with parameters 'lambdas' and 'lambda_s'. In 
-  # particular epsilon is zero (default value)
-  simGenotypes = sample_genotypes(L, poset, sampling_param=lambda_s, lambdas=lambdas)
-  dist = apply(simGenotypes$hidden_genotypes, 1, hamming_dist, y=genotype)
-  probs = eps^dist * (1-eps)^(p-dist)
-  
-  return(apply(simGenotypes$T_events, 2, function(x) sum(x * probs)) / sum(probs))
+get_parents <- function(poset) {
+  parents <- apply(poset, 2, function(x) which(x == 1))
+  return(parents)
 }
 
 
-dist_imp <- function(L, poset, lambdas, lambda_s, genotype, eps) {
-  # Compute expected hamming distance between a given observations (genotype) and the
-  # underlying/true genotype using Monte Carlo sampling
-  p = ncol(poset)
-  simGenotypes = sample_genotypes(L, poset, sampling_param=lambda_s, lambdas=lambdas)
-  dist = apply(simGenotypes$hidden_genotypes, 1, hamming_dist, y=genotype)
-  probs = eps^dist * (1-eps)^(p-dist)
-  return(sum(dist * probs) / sum(probs))
+get_childreen <- function(poset) {
+  childreen <- apply(poset, 1, function(x) which(x == 1))
+  return(childreen)
+}
+
+
+add_relations <- function(genotype, childreen) {
+  
+  # Add 1's:   look for parent nodes which have not occurred, but any of their 
+  #            childreen had, and insert a 1 (replace 0 in parental node by 1).
+  # genotype:  binary vector indicating whether an event has been observed (1)
+  #            or not (0)
+  # childreen: computed on the transitively closed poset 
+  
+  p = length(genotype)
+  return(sapply(1:p, 
+                function(i, obs, c) 
+                  ifelse(obs[i] == 0, ifelse(any(obs[c[[i]]] == 1), 1, obs[i]),
+                         obs[i]), obs=genotype, c=childreen))
+}
+
+
+remove_relations <- function(genotype, parents) {
+  
+  # Remove 1's: look for child nodes which have occurred, but if any of their  
+  #             parents have not occurred remove them (replace 1 in child 
+  #             node by 0).
+  # genotype:   binary vector indicating whether an event has been observed (1)
+  #             or not (0)
+  # parents:    computed on the transitively closed poset 
+  
+  p = length(genotype)
+  return(sapply(1:p, 
+                function(i, obs, p) 
+                  ifelse(obs[i] == 1, 
+                         ifelse(any(obs[p[[i]]] == 0), 0, obs[i]), obs[i]),
+                obs=genotype, p=parents))
+}
+
+
+get_possible_moves <- function(genotype, parents, childreen) {
+
+  # Get the size of the Exit set - mutations that can happen next
+  idx = which(genotype == 0)
+  if (length(idx) == 0) {
+    set_size_add = 0
+    idxs_add = NA
+  } else {
+    idxs_add = idx[sapply(idx, function(i, x, p) all(x[p[[i]]] == 1), x=genotype, 
+                          p=parents)]
+    set_size_add = length(idxs_add)
+  }
+  
+  # Get the size of the set of mutations that happened last - can be removed
+  # and the genotype remains compatible with the poset
+  idx = which(genotype == 1)
+  if (length(idx) == 0) {
+    set_size_remove = 0
+    idxs_remove = NA
+  } else {
+    idxs_remove = idx[sapply(idx, function(i, x, c) all(x[c[[i]]] == 0), 
+                             x=genotype, c=childreen)]
+    set_size_remove = length(idxs_remove)
+  }
+  
+  return(list("set_size"=c("add"=set_size_add, 
+                           "remove"=set_size_remove), 
+              "idxs_add"=idxs_add, "idxs_remove"=idxs_remove))
+}
+
+
+perturb <- function(events, parents, childreen, perturb_prob=0.8, 
+                    compatible=FALSE) {
+  
+  # Draw a random number between 0 and 1. If this number is < than perturb_prob,
+  # then perturb the genotype by adding or removing an observation, but ensuring
+  # observation remains compatible
+  
+  # ARGUMENTS
+  # events:    matrix of genotypes, each row correponds to a vector indicating
+  #            whether an event has been observed (1) or not (0)
+  # parents:   computed on the transitively closed poset 
+  # childreen: computed on the transitively closed poset 
+  
+  # RETURN VALUES
+  # X:                perturbed version of compatible genotypes, remains 
+  #                   compatible with the current poset
+  # option_set_size:  size of the exit set or set of observations which can be 
+  #                   removed. NA is returned when the sample was not perturbed 
+  
+  L = nrow(events)  # number of samples
+  p = ncol(events)  # number of events/mutations
+  new_obs = events
+  option_set_size = rep(NA, L) 
+  
+  perturb = ifelse(runif(L, 0, 1) < perturb_prob, 1, 0)
+  idxs_perturb = which(perturb == 1)
+  
+  # When observation Y was already compatible, all rows are equivalent
+  if (compatible) {
+    # Get indices of mutations that can be either added or removed
+    idxs = get_possible_moves(events[1, ], parents, childreen)
+  }
+  
+  for (i in idxs_perturb) {
+    
+    # Get indices of mutations that can be either added or removed
+    if (!compatible) {
+      idxs = get_possible_moves(events[i, ], parents, childreen)
+    }
+    option_set_size[i] = sum(idxs$set_size)
+    
+    # Choose one index randomly
+    idx = sample.int(option_set_size[i], 1)
+    mutation_idx = na.omit(c(idxs$idxs_add, idxs$idxs_remove))[idx]
+    
+    # Check whether move corresponds to an adding move
+    add = ifelse(idx <= idxs$set_size["add"], TRUE, FALSE)
+    
+    new_obs[i, mutation_idx] = ifelse(add, 1, 0)
+    
+  }
+  
+  return(list("X" = new_obs, "option_set_size" = option_set_size))
+}
+
+
+draw_samples <- function(genotype, L, parents, childreen, compatible, 
+                            add_prob=0.5, perturb_prob=0.8) {
+  
+  # Draw L samples from the proposal
+  # two-steps proposal: make compatible and perturb
+  # genotype:   binary vector indicating whether an event has been observed (1)
+  #             or not (0)
+  # L:          number of samples
+  # parents:    computed on the transitively closed poset 
+  # childreen:  computed on the transitively closed poset 
+  # compatible: variable indicating whether the genotype is compatible (1) with 
+  #             current poset or not (0)
+  # add_prob:   Incompatible genotypes are made compatible by adding or removing
+  #             observations. One of the two operations is chosen by drawing
+  #             a random number, and if this number is > add_prob, then 
+  #             observations are added.
+  # perturb_prob: Genotypes are perturbed in order to learn epsilon. A genotype 
+  #             is perturbed, if after drawing a random number, this is <
+  #             perturb_prob, otherwise X_start = X
+  
+  p = length(genotype)  # number of events/mutations
+  
+  if (compatible) {
+    # if genotype is compatible with poset, we can inmediately go to step 2:
+    # perturb
+    compatible_obs = matrix(genotype, nrow=L, ncol=p, byrow=TRUE)
+  } else {
+    # if genotype is NOT compatible with poset, we need to generate L compatible
+    # versions by adding or removing observations
+    compatible_by_adding = add_relations(genotype, childreen)
+    compatible_by_removing = remove_relations(genotype, parents)
+    add = ifelse(runif(L, 0, 1) > add_prob, 1, 0)
+    compatible_obs = matrix(0, L, p)
+    
+    if (all(add == 1)) {
+      compatible_obs = matrix(compatible_by_adding, nrow=L, ncol=p, byrow=TRUE)
+    } else if (all(add == 0)) {
+      compatible_obs = matrix(compatible_by_removing, nrow=L, ncol=p, byrow=TRUE)
+    } else {
+      idxs_add = which(add == 1)
+      compatible_obs[idxs_add, ] = matrix(compatible_by_adding, nrow=sum(add), 
+                                          ncol=p, byrow=TRUE)
+      compatible_obs[-idxs_add, ] = matrix(compatible_by_removing, nrow=L-sum(add), 
+                                           ncol=p, byrow=TRUE)
+    }
+  }
+  samples = perturb(compatible_obs, parents, childreen, perturb_prob, compatible)
+  return(samples)
+}
+
+
+rtexp <- function(x, rate) {
+  rand_num = runif(1, 0, 1)
+  return(-log(1 - rand_num * (1 - exp(-rate * x))) / rate)
+}
+
+
+sample_mutation_times <- function(genotype, poset, lambdas, lambda_s=1.0,
+                                  sampling_time=NULL) {
+  
+  p = length(genotype)  # number of events/mutations
+  parents = get_parents(poset)
+  if (is.null(sampling_time)) {
+    sampling_time = rexp(1, rate=lambda_s)
+  }
+  Tdiff = numeric(p)
+  Tsum = numeric(p)
+  dens = 0
+  topo_path = my.topological.sort(poset)
+  
+  for (j in topo_path) {
+    max_parents_t = 0
+    if (length(parents[[j]]) > 0) {
+      for (u in 1:length(parents[[j]])) {
+        if(Tsum[parents[[j]][u]] > max_parents_t) {
+          max_parents_t = Tsum[parents[[j]][u]]
+        }
+      }
+    }
+    
+    if (genotype[j] == 1) {
+      # If mutation is observed, Z ~ TExp(lambda, 0, sampling_time - max_parents_t)
+      Z = rtexp(sampling_time - max_parents_t, rate=lambdas[j])
+      Tsum[j] =  max_parents_t + Z
+      dens = dens +  dexp(Z, rate=lambdas[j], log=TRUE) - 
+        pexp(sampling_time - max_parents_t, rate=lambdas[j], log.p=TRUE)
+    } else {
+      # If mutation is not observed, Z ~ Exp(lambda)
+      Z = rexp(1, rate=lambdas[j])
+      Tsum[j] = max(sampling_time, max_parents_t) + Z
+      dens =  dens + dexp(Z, rate=lambdas[j], log=TRUE)
+    }
+    Tdiff[j] = Tsum[j] - max_parents_t
+  }
+  return(c("density"=dens, "Tdiff"=Tdiff))
+}
+
+
+log_cbn_density <- function(Tdiff, rate) {
+  dens = sum(log(lambdas)) - sum(lambdas * Tdiff)
+  return(dens)
+}
+
+
+importance_weight <- function(genotype, L, poset, lambdas, lambda_s, eps, 
+                              sampling_time, add_prob=0.5, perturb_prob=0.8,
+                              sampling=c('naive', 'add-remove')) {
+  
+  sampling = match.arg(sampling)
+  p = ncol(poset) # number of events/mutations
+  
+  if (sampling == 'naive') {
+    
+    # Generate L samples from poset with parameters 'lambdas' and 'lambda_s'. In 
+    # particular epsilon is zero (default value) - because the idea is to generate
+    # samples of X (underlying true)
+    ### **TODO** ### If sampling times available, not considered to generate 
+    # samples
+    samples = sample_genotypes(L, poset, sampling_param=lambda_s, lambdas=lambdas)
+    d = apply(samples$hidden_genotypes, 1, hamming_dist, y=genotype)
+    prob_Y_X = eps^d * (1-eps)^(p-d)
+    
+    return(list("w"=prob_Y_X, "time_differences"=samples$T_events, "dist"=d))
+    
+  } else if (sampling == 'add-remove') {
+    
+    poset_trans_closed = trans_closure(poset)
+    parents = get_parents(poset_trans_closed)
+    childreen = get_childreen(poset_trans_closed)
+    compatible = is_compatible(genotype, poset)
+    # Generate L samples from poset with parameters 'lambdas' and 'lambda_s' 
+    # according to proposal
+    samples = draw_samples(genotype, L, parents, childreen, compatible,  
+                           add_prob, perturb_prob)
+    
+    # Generate mutation times Tj from sample i
+    Tdiff = apply(samples$X, 1, sample_mutation_times, poset=poset,
+                  lambdas=lambdas, lambda_s=lambda_s, 
+                  sampling_time=sampling_time)
+    
+    log_proposal_X = Tdiff["density", ]
+    Tdiff = t(tail(Tdiff, n=-1))
+    
+    # Hamming distance bewteen samples and genotype
+    dist = apply(samples$X, 1, hamming_dist, y=genotype)
+    
+    # Computing log(Pr(Y|X))
+    log_Pr_Y_X = log(eps^dist) + log((1-eps)^(p-dist))
+    
+    # Computing log(Pr(X))
+    log_Pr_X = apply(Tdiff, 1, log_cbn_density, rate=lambdas)
+    
+    # Computing density of the proposal - for correction
+    # proposal : weight accounting for making genotype compatible + weight 
+    #            accounting for choosing a possible mutation for perturbing
+    #            the sample + weight accounting for sampling times from 
+    #            a truncated exponential
+    num_options = samples$option_set_size
+    stopifnot(all(na.omit(num_options) != 0))
+    log_proposal_Y_X = ifelse(is.na(num_options), log(1-perturb_prob), 
+                              log(perturb_prob) + log(1/num_options))
+    if (!compatible) {
+      log_proposal_Y_X = log_proposal_Y_X + log(add_prob) 
+    } 
+    
+    log_proposal = log_proposal_Y_X + log_proposal_X
+    
+    importance_weight = exp(log_Pr_X + log_Pr_Y_X - log_proposal)
+    return(list("w"=importance_weight, "time_differences"=Tdiff, "dist"=dist))
+  }
+
+}
+
+
+prob_importance_sampling <- function(genotype, L, poset, lambdas, lambda_s, 
+                                     eps, sampling_time=NULL, 
+                                     sampling=c('naive', 'add-remove')) {
+  
+  # Compute Pr(genotype) using Monte Carlo sampling
+  # L        number of samples
+  # sampling type of sampling. OPTIONS: 'naive' - generating occurrence times  
+  #          according to lambdas and from them genotypes; 'add-remove' - 
+  #          generating genotypes from observed genotypes using a two-steps 
+  #          proposal. First, making genotypes compatible with the poset by
+  #          either adding or removing observations. Second, perturbing this 
+  #          version by adding or removing observations. 
+  # NOTE: If 'naive' sampling is employed, sampling times are not used. 
+  
+  sampling = match.arg(sampling)
+  probs = importance_weight(genotype, L, poset, lambdas, lambda_s, eps, 
+                            sampling_time=sampling_time, sampling=sampling)
+  probs = probs$w
+
+  return(sum(probs) / L)
+}
+
+
+tdiff_importance_sampling <- function(genotype, L, poset, lambdas, lambda_s, 
+                                      eps, sampling_time=NULL, 
+                                      sampling=c('naive', 'add-remove')) {
+  
+  # Compute expected time differences for a given genotype using Monte Carlo 
+  # sampling
+  sampling = match.arg(sampling)
+  importance_weights = importance_weight(genotype, L, poset, lambdas, lambda_s,
+                                         eps, sampling_time=sampling_time, 
+                                         sampling=sampling)
+  return(colSums(importance_weights$w * importance_weights$time_differences) / 
+           sum(importance_weights$w))
+
+}
+
+
+dist_importance_sampling <- function(genotype, L, poset, lambdas, lambda_s, 
+                                     eps, sampling_time=NULL, 
+                                     sampling=c('naive', 'add-remove')) {
+  
+  # Compute expected hamming distance between a given observations (genotype) 
+  # and the underlying/true genotype using Monte Carlo sampling
+  sampling = match.arg(sampling)
+  importance_weights = importance_weight(genotype, L, poset, lambdas, lambda_s,
+                                         eps, sampling_time=sampling_time, 
+                                         sampling=sampling)
+  return(sum(importance_weights$dist * importance_weights$w) / 
+           sum(importance_weights$w))
+}
+
+
+prob_empirical_vs_sampling <- function(events, L, rep=NULL, one_genotype=FALSE, 
+                                  sampling_times=NULL, 
+                                  sampling=c('naive', 'add-remove'), outdir,
+                                  outname="", binwidth=0.01) {
+  
+  # events         matrix of observations or single genotype, if 'one_genotype' 
+  #                is TRUE 
+  # L              number of samples
+  # rep            if only one genotype is provided, number of repetitions
+  # one_genotype   boolean variable indicating if only one genotype is provided
+  # sampling_times vector of sampling times per event. 
+  # sampling       type of sampling. OPTIONS: 'naive' or 'add-remove'.
+  # NOTE: If 'naive' sampling is employed, sampling times are not used. 
+  
+  sampling = match.arg(sampling)
+  
+  if (one_genotype) {
+    if (length(sampling_times) > 1) {
+      warning("Only one sampling time was expected. First entry of vector ", 
+               "\'sampling_times\' is used.")
+      sampling_times = sampling_times[1]
+    }
+    genotype = events
+    sampling_time = sampling_times
+    N = rep
+  } else {
+    N = nrow(events)
+  }
+  
+  prob_empirical = numeric(N)
+  prob_sampling  = numeric(N)
+  
+  for (i in 1:N) {
+    if (!one_genotype) {
+      genotype = simulated_obs$obs_events[i, ]
+      sampling_time = sampling_times[i]
+    }
+    prob_empirical[i] = geno_prob_empirical(N=100000, poset, lambdas, lambda_s, 
+                                            genotype, eps=eps)
+    prob_sampling[i] = prob_importance_sampling(genotype, L=L, poset, lambdas, 
+                                                lambda_s, eps=eps, 
+                                                sampling_time=sampling_time,
+                                                sampling=sampling)
+  }
+  
+  outdir = file.path(outdir, paste("L", L, "_", sampling, sep=""))
+  if (!dir.exists(outdir)) {
+    dir.create(outdir)
+  }
+  outname = file.path(outdir, paste("probability_Y_empirical_vs_sampling", 
+                                    outname, ".pdf", sep=""))
+  
+  if (one_genotype) {
+    df = data.frame(x=c(prob_empirical, prob_sampling), 
+                    method=c(rep("empirical", N), rep("sampling", N)))
+    pl = ggplot(df, aes(x = x, fill = method))
+    pl = pl + geom_histogram(binwidth=binwidth, alpha=0.5, position="identity") + 
+      labs(x=expression(P(Y)), y="Frequency") + 
+      theme_bw() + theme(text=element_text(size=14))
+    
+    ggsave(outname, pl, width=4, height=2.5)
+    
+  } else {
+    df = data.frame(x = prob_empirical, y = prob_sampling)
+    pl = ggplot(df, aes(x = x, y = y))
+    pl = pl + geom_point() + 
+      geom_abline(intercept = 0, slope = 1, colour="blue") + 
+      xlab(expression(P[empirical](Y))) + ylab(expression(widehat(P)(Y))) +
+      theme_bw() + theme(text=element_text(size=14))
+    
+    ggsave(outname, pl, width=3, height=2)
+    
+  }
+  
+  return(list("empirical" = prob_empirical, "sampling" = prob_sampling))
+}
+
+
+tdiff_empirical_vs_sampling <- function(events, L, rep=NULL, one_genotype=FALSE, 
+                                       sampling_times=NULL, 
+                                       sampling=c('naive', 'add-remove'), outdir,
+                                       outname="", binwidth=0.01) {
+  
+  # events         matrix of observations or single genotype, if 'one_genotype' 
+  #                is TRUE 
+  # L              number of samples
+  # rep            if only one genotype is provided, number of repetitions
+  # one_genotype   boolean variable indicating if only one genotype is provided
+  # sampling_times vector of sampling times per event. 
+  # sampling       type of sampling. OPTIONS: 'naive' or 'add-remove'.
+  # NOTE: If 'naive' sampling is employed, sampling times are not used. 
+  
+  sampling = match.arg(sampling)
+  
+  if (one_genotype) {
+    if (length(sampling_times) > 1) {
+      warning("Only one sampling time was expected. First entry of vector ", 
+              "\'sampling_times\' is used.")
+      sampling_times = sampling_times[1]
+    }
+    genotype = events
+    sampling_time = sampling_times
+    p = length(genotype)
+    N = rep
+  } else {
+    N = nrow(events)
+    p = ncol(events)
+  }
+  
+  time_diff_empirical = matrix(0, ncol=p, nrow=N)
+  time_diff_sampling  = matrix(0, ncol=p, nrow=N)
+  
+  for (i in 1:N) {
+    if (!one_genotype) {
+      genotype = simulated_obs$obs_events[i, ]
+      sampling_time = sampling_times[i]
+    }
+    time_diff_empirical[i, ] = tdiff_empirical(N=100000, poset, lambdas, lambda_s,
+                                               genotype, eps=eps)
+    time_diff_sampling[i, ] = tdiff_importance_sampling(genotype, L=L, poset, 
+                                                        lambdas, lambda_s, eps,
+                                                        sampling_time=sampling_time, 
+                                                        sampling=sampling)
+  }
+  
+  outdir = file.path(outdir, paste("L", L, "_", sampling, sep=""))
+  if (!dir.exists(outdir)) {
+    dir.create(outdir)
+  }
+  
+  for (j in 1:p) {
+    pl_name = file.path(outdir, paste("time_diff_empirical_vs_sampling", 
+                                      outname, "_j", j, ".pdf", sep=""))
+    
+    if (one_genotype) {
+      df = data.frame(x=c(time_diff_empirical[, j], time_diff_sampling[ ,j]), 
+                      method=c(rep("empirical", N), rep("sampling", N)))
+      pl = ggplot(df, aes(x = x, fill = method))
+      pl = pl + geom_histogram(binwidth=binwidth, alpha=0.5, position="identity") + 
+        labs(x=expression(Z[j]), y="Frequency") + 
+        theme_bw() + theme(text=element_text(size=14))
+      
+      ggsave(pl_name, pl, width=3.5, height=2)
+      
+    } else {
+      df = data.frame(x = time_diff_empirical[, j], y = time_diff_sampling[, j])
+      xlab = substitute(paste(Z[j]), list(j=j))
+      ylab = substitute(paste(widehat(Z)[j]), list(j=j))
+      pl = ggplot(df, aes(x = x, y = y))
+      pl = pl + geom_point() + 
+        geom_abline(intercept = 0, slope = 1, colour="blue") + 
+        labs(x=xlab, y=ylab) + 
+        theme_bw() + theme(text=element_text(size=14))
+      
+      ggsave(pl_name, pl, width=3, height=2)
+      
+    }
+    
+  }
+  
+  return(list("empirical" = time_diff_empirical, "sampling" = time_diff_sampling))
+}
+
+
+dist_empirical_vs_sampling <- function(events, L, rep=NULL, one_genotype=FALSE, 
+                                       sampling_times=NULL, 
+                                       sampling=c('naive', 'add-remove'), outdir,
+                                       outname="", binwidth=0.01) {
+  
+  # events         matrix of observations or single genotype, if 'one_genotype' 
+  #                is TRUE 
+  # L              number of samples
+  # rep            if only one genotype is provided, number of repetitions
+  # one_genotype   boolean variable indicating if only one genotype is provided
+  # sampling_times vector of sampling times per event. 
+  # sampling       type of sampling. OPTIONS: 'naive' or 'add-remove'.
+  # NOTE: If 'naive' sampling is employed, sampling times are not used. 
+  
+  sampling = match.arg(sampling)
+  
+  if (one_genotype) {
+    if (length(sampling_times) > 1) {
+      warning("Only one sampling time was expected. First entry of vector ", 
+              "\'sampling_times\' is used.")
+      sampling_times = sampling_times[1]
+    }
+    genotype = events
+    sampling_time = sampling_times
+    N = rep
+  } else {
+    N = nrow(events)
+  }
+  
+  d_empirical = numeric(N)
+  d_sampling  = numeric(N)
+  
+  for (i in 1:N) {
+    if (!one_genotype) {
+      genotype = simulated_obs$obs_events[i, ]
+      sampling_time = sampling_times[i]
+    }
+    d_empirical[i] = dist_empirical(N=100000, poset, lambdas, lambda_s, genotype,
+                                    eps=eps)
+    d_sampling[i] = dist_importance_sampling(genotype, L=L, poset, lambdas, 
+                                             lambda_s, eps, 
+                                             sampling_time=sampling_time,
+                                             sampling=sampling)
+  }
+  
+  outdir = file.path(outdir, paste("L", L, "_", sampling, sep=""))
+  if (!dir.exists(outdir)) {
+    dir.create(outdir)
+  }
+  outname = file.path(outdir, paste("hamming_dist_empirical_vs_sampling", 
+                                    outname, ".pdf", sep=""))
+  
+  if (one_genotype) {
+    df = data.frame(x=c(d_empirical, d_sampling), 
+                    method=c(rep("empirical", N), rep("sampling", N)))
+    pl = ggplot(df, aes(x = x, fill = method))
+    pl = pl + geom_histogram(binwidth=binwidth, alpha=0.5, position="identity") + 
+      labs(x=expression(d(X,Y)), y="Frequency") + 
+      theme_bw() + theme(text=element_text(size=14))
+    
+    ggsave(outname, pl, width=3.5, height=2)
+    
+  } else {
+    df = data.frame(x = d_empirical, y = d_sampling)
+    pl = ggplot(df, aes(x = x, y = y))
+    pl = pl + geom_point() + 
+      geom_abline(intercept = 0, slope = 1, colour="blue") + 
+      labs(x = expression(d[empirical](X,Y)), y = expression(widehat(d)(X,Y))) + 
+      theme_bw() + theme(text=element_text(size=14))
+    
+    ggsave(outname, pl, width=3, height=2)
+  }
+  
+  
+  return(list("empirical" = d_empirical, "sampling" = d_sampling))
 }
 
 
@@ -190,507 +769,4 @@ MCMC_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0, max_
   avg_llhood  = avg_llhood / (max_iter - record_iter)
   return(list("lambdas"=lambdas, "eps"=eps, "llhood"=llhood, "avg_lambdas"=avg_lambdas, 
               "avg_eps"=avg_eps, "avg_llhood"=avg_llhood))
-}
-
-
-get_parents <- function(poset) {
-  parents <- apply(poset, 2, function(x) which(x == 1))
-  return(parents)
-}
-
-
-get_childreen <- function(poset) {
-  childreen <- apply(poset, 1, function(x) which(x == 1))
-  return(childreen)
-}
-
-
-add_relations <- function(genotype, childreen) {
-  
-  # Add 1's:   look for parent nodes which have not occurred, but any of their 
-  #            childreen had, and insert a 1 (replace 0 in parental node by 1).
-  # genotype:  binary vector indicating whether an event has been observed (1)
-  #            or not (0)
-  # childreen: computed on the transitively closed poset 
-  
-  p = length(genotype)
-  return(sapply(1:p, 
-                function(i, obs, c) 
-                  ifelse(obs[i] == 0, ifelse(any(obs[c[[i]]] == 1), 1, obs[i]),
-                         obs[i]), obs=genotype, c=childreen))
-}
-
-
-remove_relations <- function(genotype, parents) {
-  
-  # Remove 1's: look for child nodes which have occurred, but if any of their  
-  #             parents have not occurred remove them (replace 1 in child 
-  #             node by 0).
-  # genotype:   binary vector indicating whether an event has been observed (1)
-  #             or not (0)
-  # parents:    computed on the transitively closed poset 
-  
-  p = length(genotype)
-  return(sapply(1:p, 
-                function(i, obs, p) 
-                  ifelse(obs[i] == 1, 
-                         ifelse(any(obs[p[[i]]] == 0), 0, obs[i]), obs[i]),
-                obs=genotype, p=parents))
-}
-
-
-get_next_mutation <- function(genotype, parents) {
-  # Look for mutations that haven't occurred but its parents have. These 
-  # mutations can occur next.
-  idx = which(genotype == 0)
-  if (length(idx) == 0) {
-    exit_size = 0
-    mutation_idx = NA
-  } else {
-    exit = idx[sapply(idx, function(i, x, p) all(x[p[[i]]] == 1), x=genotype, 
-                      p=parents)]
-    exit_size = length(exit)
-    if (exit_size > 1) {
-      mutation_idx = sample(exit, 1)
-    } else {
-      mutation_idx = exit
-    }
-  }
-  return(c("exit_size"=exit_size, "mutation_idx"=mutation_idx))
-}
-
-
-perturb_add <- function(events, idxs) {
-  # add 1: add an observation from the Exit(obs) - mutations that can occur next
-  L = nrow(events)  # number of samples 
-  if (is.null(L)) {
-    # only one observation is passed as 'events'
-    new_obs = events
-    new_obs[idxs] = 1
-  } else {
-    new_obs = t(sapply(1:L, function(i, x, idxs) { 
-      x[i, idxs[i]] = 1
-      return(x[i, ])
-    }, x=events, idxs=idxs)) 
-  }
-  return(new_obs)
-}
-
-
-get_previous_mutation <- function(genotype, childreen) {
-  # Look for mutations that have occurred but any of its childreen haven't. These
-  # mutation are candidates to be removed
-  idx = which(genotype == 1)
-  if (length(idx) == 0) {
-    set_size = 0
-    mutation_idx = NA
-  } else {
-    mutation_idx = idx[sapply(idx, function(i, x, c) all(x[c[[i]]] == 0), 
-                              x=genotype, c=childreen)]
-    set_size = length(mutation_idx)
-    if (set_size > 1) {
-      mutation_idx = sample(mutation_idx, 1)
-    } 
-  }
-  return(c("set_size"=set_size, "mutation_idx"=mutation_idx))
-}
-
-
-perturb_remove <- function(events, idxs) {
-  # remove 1: remove an observation whose childreen have not occurred
-  L = nrow(events)  # number of samples
-  if (is.null(L)) {
-    new_obs = events
-    new_obs[idxs] = 0
-  } else {
-    new_obs = t(sapply(1:L, function(i, x, idxs) { 
-      x[i, idxs[i]] = 0
-      return(x[i, ])
-    }, x=events, idxs=idxs))
-  }
-  return(new_obs)
-}
-
-
-perturb <- function(events, parents, childreen, perturb_prob=0.8, add_prob=0.5) {
-  
-  # Draw a random number between 0 and 1. If this number is < than perturb_prob,
-  # then perturb the genotype by adding or removing an observation, but ensuring
-  # observation remains compatible
-  # ARGUMENTS
-  # events:    matrix of genotypes, each row correponds to a vector indicating
-  #            whether an event has been observed (1) or not (0)
-  # parents:   computed on the transitively closed poset 
-  # childreen: computed on the transitively closed poset 
-  # RETURN VALUES
-  # X:         perturbed version of compatible genotypes, remains compatible
-  # set_size:  size of the exit set or set of observations which can be removed
-  #            NA is returned when the sample was not perturbed. 
-  
-  L = nrow(events)  # number of samples
-  p = ncol(events)  # number of events/mutations
-  new_obs = matrix(0, L, p)
-  set_size = rep(NA, L) #NULL #rep(NULL, L)
-  
-  perturb = ifelse(runif(L, 0, 1) < perturb_prob, 1, 0)
-  idxs_perturb = which(perturb == 1)
-
-  if (length(idxs_perturb) == 0) {
-    new_obs = events
-  } else {
-    new_obs[-idxs_perturb, ] = events[-idxs_perturb, ]
-  
-    # Draw a random number between 0 and 1. If this number is > than add_prob, then 
-    # add an observation
-    add = ifelse(runif(sum(perturb), 0, 1) > add_prob, 1, 0)
-    idxs_add = which(add == 1)
-  
-    # If length(idxs_perturb) is one, apply returns an error
-    events_mat = matrix(events[idxs_perturb, ], nrow=length(idxs_perturb), ncol=p)
-  
-    if (all(add == 1)) {
-    
-      # If all samples are perturbed by adding mutations
-      add_mutations = apply(events_mat, 1, get_next_mutation, parents=parents)
-      new_obs[idxs_perturb, ] = perturb_add(events_mat, 
-                                            add_mutations["mutation_idx", ])
-      set_size[idxs_perturb] = add_mutations["exit_size", ]
-    
-    } else if (all(add == 0)) {
-    
-      # If all samples are perturbed by removing mutations
-      remove_mutations = apply(events_mat, 1, get_previous_mutation, 
-                               childreen=childreen)
-      new_obs[idxs_perturb, ] = perturb_remove(events_mat, 
-                                               remove_mutations["mutation_idx", ])
-      set_size[idxs_perturb] = remove_mutations["set_size", ]
-      
-    } else {
-
-      if (length(idxs_add) > 1) {
-        # If multiple samples are perturbed by adding mutations
-        add_mutations = apply(events_mat[idxs_add, ], 1, get_next_mutation, 
-                              parents=parents)
-        new_obs[idxs_perturb[idxs_add], ] = perturb_add(events_mat[idxs_add, ], 
-                                                        add_mutations["mutation_idx", ])
-        set_size[idxs_perturb[idxs_add]] = add_mutations["exit_size", ]
-        
-      } else {
-        # If only one sample is perturbed by adding mutations
-        add_mutations = get_next_mutation(events_mat[idxs_add, ], parents=parents)
-        new_obs[idxs_perturb[idxs_add], ] = perturb_add(events_mat[idxs_add, ], 
-                                                        add_mutations["mutation_idx"])
-        set_size[idxs_perturb[idxs_add]] = add_mutations["exit_size"]
-        
-      }
-    
-      if ((sum(perturb) - length(idxs_add)) > 1) {
-        # If multiple samples are perturbed by removing mutations
-        remove_mutations = apply(events_mat[-idxs_add, ], 1, get_previous_mutation, 
-                                 childreen=childreen)
-        new_obs[idxs_perturb[-idxs_add], ] = perturb_remove(events_mat[-idxs_add, ], 
-                                                            remove_mutations["mutation_idx", ])
-        set_size[idxs_perturb[-idxs_add]] = remove_mutations["set_size", ]
-        
-      } else {
-        # If only one sample is perturbed by removing mutations
-        remove_mutations = get_previous_mutation(events_mat[-idxs_add, ], 
-                                                 childreen=childreen)
-        new_obs[idxs_perturb[-idxs_add], ] = perturb_remove(events_mat[-idxs_add, ], 
-                                                            remove_mutations["mutation_idx"])
-        set_size[idxs_perturb[-idxs_add]] = remove_mutations["set_size"]
- 
-      }
-    }
-  }
-  return(list("X" = new_obs, "set_size" = set_size))
-}
-
-
-draw_samples <- function(genotype, L, parents, childreen, compatible, 
-                            add_prob1=0.5, perturb_prob=0.8, add_prob2=0.5) {
-  
-  # Draw L samples from the proposal
-  # two-steps proposal: make compatible and perturb
-  # genotype:   binary vector indicating whether an event has been observed (1)
-  #             or not (0)
-  # L:          number of samples
-  # parents:    computed on the transitively closed poset 
-  # childreen:  computed on the transitively closed poset 
-  # compatible: variable indicating whether the genotype is compatible (1) with 
-  #             current poset or not (0)
-  # add_prob1:  Incompatible genotypes are made compatible by adding or removing
-  #             observations. One of the two operations is chosen by drawing
-  #             a random number, and if this number is > add_prob1, then 
-  #             observations are added.
-  # add_prob2:  Genotypes are pertubed by adding or removing an observation. One 
-  #             of the two operations is chosen by drawing a random number, and 
-  #             if this number is > add_prob2, then an observation is added. 
-  # perturb_prob: Genotypes are perturbed in order to learn epsilon. A genotype 
-  #             is perturbed, if after drawing a random number, this is <
-  #             perturb_prob, otherwise X_start = X
-  
-  p = length(genotype)  # number of events/mutations
-  
-  if (compatible) {
-    # if genotype is compatible with poset, we can inmediately go to step 2:
-    # perturb
-    compatible_obs = matrix(genotype, nrow=L, ncol=p, byrow=TRUE)
-  } else {
-    # if genotype is NOT compatible with poset, we need to generate L compatible
-    # versions by adding or removing observations
-    compatible_by_adding = add_relations(genotype, childreen)
-    compatible_by_removing = remove_relations(genotype, parents)
-    add = ifelse(runif(L, 0, 1) > add_prob1, 1, 0)
-    compatible_obs = matrix(0, L, p)
-    
-    if (all(add == 1)) {
-      compatible_obs = matrix(compatible_by_adding, nrow=L, ncol=p, byrow=TRUE)
-    } else if (all(add == 0)) {
-      compatible_obs = matrix(compatible_by_removing, nrow=L, ncol=p, byrow=TRUE)
-    } else {
-      idxs_add = which(add == 1)
-      compatible_obs[idxs_add, ] = matrix(compatible_by_adding, nrow=sum(add), 
-                                          ncol=p, byrow=TRUE)
-      compatible_obs[-idxs_add, ] = matrix(compatible_by_removing, nrow=L-sum(add), 
-                                           ncol=p, byrow=TRUE)
-    }
-  }
-  samples = perturb(compatible_obs, parents, childreen, perturb_prob, add_prob2)
-  return(samples)
-}
-
-
-rtexp <- function(x, rate) {
-  rand_num = runif(1, 0, 1)
-  return(-log(1 - rand_num * (1 - exp(-rate * x))) / rate)
-}
-
-
-sample_mutation_times <- function(genotype, poset, lambdas, lambda_s=1.0,
-                                  sampling_time=NULL) {
-  
-  p = length(genotype)  # number of events/mutations
-  parents = get_parents(poset)
-  if (is.null(sampling_time)) {
-    sampling_time = rexp(1, rate=lambda_s)
-  }
-  Tdiff = numeric(p)
-  Tsum = numeric(p)
-  dens = 0
-  topo_path = my.topological.sort(poset)
-  
-  for (j in topo_path) {
-    max_parents_t = 0
-    if (length(parents[[j]]) > 0) {
-      for (u in 1:length(parents[[j]])) {
-        if(Tsum[parents[[j]][u]] > max_parents_t) {
-          max_parents_t = Tsum[parents[[j]][u]]
-        }
-      }
-    }
-    
-    if (genotype[j] == 1) {
-      # If mutation is observed, Z ~ TExp(lambda, 0, sampling_time - max_parents_t)
-      Z = rtexp(sampling_time - max_parents_t, rate=lambdas[j])
-      Tsum[j] =  max_parents_t + Z
-      dens = dens +  dexp(Z, rate=lambdas[j], log=TRUE) - 
-        pexp(sampling_time - max_parents_t, rate=lambdas[j], log.p=TRUE)
-    } else {
-      # If mutation is not observed, Z ~ Exp(lambda)
-      Z = rexp(1, rate=lambdas[j])
-      Tsum[j] = max(sampling_time, max_parents_t) + Z
-      dens =  dens + dexp(Z, rate=lambdas[j], log=TRUE)
-    }
-    Tdiff[j] = Tsum[j] - max_parents_t
-  }
-  return(c("density"=dens, "Tdiff"=Tdiff))
-}
-
-
-log_cbn_density <- function(Tdiff, rate) {
-  dens = sum(log(lambdas)) - sum(lambdas * Tdiff)
-  return(dens)
-}
-
-
-importance_weight <- function(genotype, L, poset, lambdas, lambda_s, eps, 
-                              sampling_time, add_prob1=0.5, perturb_prob=0.8, 
-                              add_prob2=0.5) {
-  p = ncol(poset) # number of events/mutations
-  
-  poset_trans_closed = trans_closure(poset)
-  parents = get_parents(poset_trans_closed)
-  childreen = get_childreen(poset_trans_closed)
-  compatible = is_compatible(genotype, poset)
-  # Generate L samples from poset with parameters 'lambdas' and 'lambda_s' 
-  # according to proposal
-  samples = draw_samples(genotype, L, parents, childreen, compatible)
-  
-  # Generate mutation times Tj from sample i
-  Tdiff = apply(samples$X, 1, sample_mutation_times, poset=poset,
-                lambdas=lambdas, lambda_s=lambda_s, 
-                sampling_time=sampling_time)
-  
-  log_proposal_X = Tdiff["density", ]
-  Tdiff = t(tail(Tdiff, n=-1))
-  
-  # Hamming distance bewteen samples and genotype
-  dist = apply(samples$X, 1, hamming_dist, y=genotype)
-  
-  # Computing log(Pr(Y|X))
-  log_Pr_Y_X = log(eps^dist) + log((1-eps)^(p-dist))
-  
-  # Computing log(Pr(X))
-  log_Pr_X = apply(Tdiff, 1, log_cbn_density, rate=lambdas)
-  
-  # Computing density of the proposal - for correction
-  # proposal : weight accounting for making genotype compatible + weight 
-  #            accounting for perturbing by adding or removing + weight  
-  #            accounting for choosing a possible event + weight accounting
-  #            for sampling times
-  set_size = samples$set_size
-  set_size[which(set_size == 0)] = 1
-  if (compatible) {
-    log_proposal_Y_X = ifelse(is.na(set_size), log(1-perturb_prob), 
-                              log(perturb_prob) + log(add_prob2) + 
-                                log(1/set_size))
-    
-  } else {
-    log_proposal_Y_X = log(add_prob1) + 
-      ifelse(is.na(set_size), log(1-perturb_prob), 
-             log(perturb_prob) + log(add_prob2) +  log(1/set_size))
-  }
-  log_proposal = log_proposal_Y_X + log_proposal_X
-  
-  importance_weight = exp(log_Pr_X + log_Pr_Y_X - log_proposal)
-  return(list("w"=importance_weight, "time_differences"=Tdiff))
-}
-
-
-prob_importance_sampling <- function(genotype, L, poset, lambdas, lambda_s, 
-                                     eps, sampling_time=NULL, 
-                                     sampling=c('naive', 'add-remove')) {
-  
-  # Compute Pr(genotype) using Monte Carlo sampling
-  # L        number of samples
-  # sampling type of sampling. OPTIONS: 'naive' - generating occurrence times  
-  #          according to lambdas and from them genotypes; 'add-remove' - 
-  #          generating genotypes from observed genotypes using a two-steps 
-  #          proposal. First, making genotypes compatible with the poset by
-  #          either adding or removing observations. Second, perturbing this 
-  #          version by adding or removing observations. 
-  # NOTE: If 'naive' sampling is employed, sampling times are not used. 
-  
-  sampling = match.arg(sampling)
-  
-  if (sampling == 'naive') {
-    
-    # Generate L samples from poset with parameters 'lambdas' and 'lambda_s'. In 
-    # particular epsilon is zero (default value) - because the idea is to generate
-    # samples of X (underlying true)
-    ### **TODO** ### If sampling times available, not considered to generate 
-    # samples
-    samples = sample_genotypes(L, poset, sampling_param=lambda_s, lambdas=lambdas)
-    p = ncol(poset) # number of events/mutations
-    d = apply(samples$hidden_genotypes, 1, hamming_dist, y=genotype)
-    probs = eps^d * (1-eps)^(p-d)
-    
-  } else if (sampling == 'add-remove') {
-    
-    probs = importance_weight(genotype, L, poset, lambdas, lambda_s, eps, 
-                              sampling_time)
-    probs = probs$w
-    
-  }
-  return(sum(probs) / L)
-}
-
-
-tdiff_importance_sampling <- function(genotype, L, poset, lambdas, lambda_s, eps,
-                                      sampling_time=NULL) {
-  
-  # Compute expected time differences for a given genotype using Monte Carlo 
-  # sampling
-  
-  importance_weights = importance_weight(genotype, L, poset, lambdas, lambda_s, eps, 
-                                         sampling_time)
-  
-  return(colSums(importance_weights$w * importance_weights$time_differences) / 
-           sum(importance_weights$w))
-}
-
-
-empirical_vs_sampling <- function(events, L, rep=NULL, one_genotype=FALSE, 
-                                  sampling_times=NULL, 
-                                  sampling=c('naive', 'add-remove'), outdir,
-                                  outname="", binwidth=0.01) {
-  
-  # events         matrix of observations or single genotype, if 'one_genotype' 
-  #                is TRUE 
-  # L              number of samples
-  # rep            if only one genotype is provided, number of repetitions
-  # one_genotype   boolean variable indicating if only one genotype is provided
-  # sampling_times vector of sampling times per event. 
-  # sampling       type of sampling. OPTIONS: 'naive' or 'add-remove'.
-  # NOTE: If 'naive' sampling is employed, sampling times are not used. 
-  
-  sampling = match.arg(sampling)
-  
-  if (one_genotype) {
-    if (length(sampling_times) > 1) {
-      warning("Only one sampling time was expected. First entry of vector ", 
-               "\'sampling_times\' is used.")
-      sampling_times = sampling_times[1]
-    }
-    genotype = events
-    sampling_time = sampling_times
-    N = rep
-  } else {
-    N = nrow(events)
-  }
-  
-  prob_empirical = numeric(N)
-  prob_sampling  = numeric(N)
-  
-  for (i in 1:N) {
-    if (!one_genotype) {
-      genotype = simulated_obs$obs_events[i, ]
-      sampling_time = sampling_times[i]
-    }
-    prob_empirical[i] = geno_prob_empirical(N=100000, poset, lambdas, lambda_s, 
-                                            genotype, eps=eps)
-    prob_sampling[i] = prob_importance_sampling(genotype, L=L, poset, lambdas, 
-                                                lambda_s, eps=eps, 
-                                                sampling_time=sampling_time,
-                                                sampling=sampling)
-  }
-  
-  outdir = file.path(outdir, paste("L", L, "_", sampling, sep=""))
-  if (!dir.exists(outdir)) {
-    dir.create(outdir)
-  }
-  outname = file.path(outdir, paste("probability_Y_empirical_vs_sampling", 
-                                    outname, ".pdf", sep=""))
-  
-  if (one_genotype) {
-    df = data.frame(x=c(prob_empirical, prob_sampling), 
-                    method=c(rep("empirical", N), rep("sampling", N)))
-    pl = ggplot(df, aes(x = x, fill = method))
-    pl = pl + geom_histogram(binwidth=binwidth, alpha=0.5, position="identity") + 
-      labs(x=expression(P(Y)), y="Frequency") + 
-      theme_bw() + theme(text=element_text(size=14))
-    
-  } else {
-    df = data.frame(x = prob_empirical, y = prob_sampling)
-    pl = ggplot(df, aes(x = x, y = y))
-    pl = pl + geom_point() + 
-      geom_abline(intercept = 0, slope = 1, colour="blue") + 
-      xlab(expression(P[empirical](Y))) + ylab(expression(widehat(P)(Y)~"\n")) +
-      theme_bw() + theme(text=element_text(size=14))
-    
-  }
-  ggsave(outname, pl, width=5, height=3)
-  
-  return(list("empirical" = prob_empirical, "sampling" = prob_sampling))
 }
