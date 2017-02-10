@@ -10,7 +10,7 @@ set.seed(10)
 p = 5                      # number of events
 poset = random_poset(p)    # true poset
 lambda_s = 1               # sampling rate
-N = 100 #1000                   # number of observations / genotypes
+N = 100 #1000              # number of observations / genotypes
 eps = 0.05
 hcbn_path = "/Users/susanap/Documents/software/ct-cbn-0.1.04b/"
 datadir = "/Users/susanap/Documents/hivX/CBN/hcbn_sampling/testdata/"
@@ -44,7 +44,8 @@ plot_poset(poset)
 # differences and expected distance
 #################################### P(Y) #####################################
 L = 1000
-# binwidth: L=10 0.1; L=1000 0.01
+binwidth = 0.01
+# binwidth: L=10 0.1; L=100 ; L=1000 0.01
 probs = prob_empirical_vs_sampling(simulated_obs$obs_events, L=L,  
                                    sampling='naive', outdir=outdir, 
                                    outname=paste("_N", N, "_L", L, sep=""))
@@ -57,7 +58,7 @@ genotype = simulated_obs$obs_events[1, ]
 probs = prob_empirical_vs_sampling(genotype, L=L, rep=N, one_genotype=TRUE, 
                                    sampling='naive', outdir=outdir, 
                                    outname=paste("_g1_rep", N, "_L", L, sep=""), 
-                                   binwidth=0.01)
+                                   binwidth=binwidth)
 save(probs, file=file.path(outdir, paste("L", L, "_naive", sep=""), 
                            paste("probability_Y_g1_rep", N, "_L", L, ".RData",
                                  sep="")))
@@ -67,7 +68,7 @@ genotype = rep(0, p)
 probs = prob_empirical_vs_sampling(genotype, L=L, rep=N, one_genotype=TRUE, 
                                    sampling='naive', outdir=outdir,
                                    outname=paste("_WT_rep", N, "_L", L, sep=""),
-                                   binwidth=0.01)
+                                   binwidth=binwidth)
 save(probs, file=file.path(outdir, paste("L", L, "_naive", sep=""), 
                            paste("probability_Y_WT_rep", N, "_L", L, ".RData",
                                  sep="")))
@@ -77,7 +78,7 @@ genotype = rep(1, p)
 probs = prob_empirical_vs_sampling(genotype, L=L, rep=N, one_genotype=TRUE, 
                                    sampling='naive', outdir=outdir,
                                    outname=paste("_RT_rep", N, "_L", L, sep=""),
-                                   binwidth=0.01)
+                                   binwidth=binwidth)
 save(probs, file=file.path(outdir, paste("L", L, "_naive", sep=""), 
                            paste("probability_Y_RT_rep", N, "_L", L, ".RData",
                                  sep="")))
@@ -183,3 +184,42 @@ abs(lambdas_hcbn - lambdas)/lambdas
 # sanity check (h-cbn report (N = 100)-302.451, (N = 1000) -3099.03)
 obs_log_likelihood(simulated_obs$obs_events, poset, lambdas_hcbn, lambda_s, 
                    0.000036, L=10000) # N=100, -302.5706; N=1000, -3101.905
+
+
+###############################################################################
+### TEST 3
+###############################################################################
+# Effective sample size for different poset samples
+library(doMC)
+thrds = 4
+registerDoMC(thrds)
+
+set.seed(10)
+p = 2^seq(2, 5, 1)
+N = rep(50, 4) #sapply(50*p, min, 1000)
+L = 1000
+
+effective_sample_size = foreach (k = 1:length(p)) %dopar% {
+  poset = random_poset(p[k])
+  lambdas = runif(p[k], 1/3*lambda_s, 3*lambda_s)
+  simulated_obs = sample_genotypes(N[k], poset, sampling_param=lambda_s, 
+                                   lambdas=lambdas, eps=eps)
+  Ne = numeric(N[k])
+  for (i in 1:N[k]) {
+    w = importance_weight(simulated_obs$obs_events[i, ], L=L, poset, lambdas,
+                          lambda_s, eps, sampling='naive')
+    Ne[i] = sum(w$w)^2 / sum(w$w^2)
+  }
+  return(Ne)
+}
+
+df = data.frame(x=rep(p, N), y=unlist(effective_sample_size))
+
+pl = ggplot(df, aes(x=factor(x), y=y)) + 
+  geom_boxplot(varwidth=TRUE, fill='cornflowerblue') + 
+  labs(x="\n poset size", y="effective sample \n") + 
+  theme_bw() + theme(text=element_text(size=14))
+
+ggsave(file.path(outdir, paste("L", L, "_naive", sep=""), 
+                 "effective_sample_size.pdf"),
+       pl, width=3.5, height=2.5)

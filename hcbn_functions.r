@@ -321,7 +321,7 @@ sample_mutation_times <- function(genotype, poset, lambdas, lambda_s=1.0,
 
 
 log_cbn_density <- function(Tdiff, rate) {
-  dens = sum(log(lambdas)) - sum(lambdas * Tdiff)
+  dens = sum(log(rate)) - sum(rate * Tdiff)
   return(dens)
 }
 
@@ -340,6 +340,9 @@ importance_weight <- function(genotype, L, poset, lambdas, lambda_s, eps,
     # samples of X (underlying true)
     ### **TODO** ### If sampling times available, not considered to generate 
     # samples
+    if (!is.null(sampling_time)) {
+      warning("Naive proposal doesn't account for sampling times")
+    }
     samples = sample_genotypes(L, poset, sampling_param=lambda_s, lambdas=lambdas)
     d = apply(samples$hidden_genotypes, 1, hamming_dist, y=genotype)
     prob_Y_X = eps^d * (1-eps)^(p-d)
@@ -502,27 +505,17 @@ prob_empirical_vs_sampling <- function(events, L, rep=NULL, one_genotype=FALSE,
   outname = file.path(outdir, paste("probability_Y_empirical_vs_sampling", 
                                     outname, ".pdf", sep=""))
   
-  if (one_genotype) {
-    df = data.frame(x=c(prob_empirical, prob_sampling), 
-                    method=c(rep("empirical", N), rep("sampling", N)))
-    pl = ggplot(df, aes(x = x, fill = method))
-    pl = pl + geom_histogram(binwidth=binwidth, alpha=0.5, position="identity") + 
-      labs(x=expression(P(Y)), y="Frequency") + 
-      theme_bw() + theme(text=element_text(size=14))
-    
-    ggsave(outname, pl, width=4, height=2.5)
-    
+  if (one_genotype) { 
+    xlab = expression(P(Y))
+    ylab = ""
   } else {
-    df = data.frame(x = prob_empirical, y = prob_sampling)
-    pl = ggplot(df, aes(x = x, y = y))
-    pl = pl + geom_point() + 
-      geom_abline(intercept = 0, slope = 1, colour="blue") + 
-      xlab(expression(P[empirical](Y))) + ylab(expression(widehat(P)(Y))) +
-      theme_bw() + theme(text=element_text(size=14))
-    
-    ggsave(outname, pl, width=3, height=2)
-    
+    xlab = expression(P[empirical](Y))
+    ylab = expression(widehat(P)(Y))
   }
+  
+  pl_empirical_vs_sampling(empirical=prob_empirical, sampling=prob_sampling, 
+                           xlab=xlab, ylab=ylab, N=N, one_genotype=one_genotype,
+                           outname=outname, binwidth=binwidth)
   
   return(list("empirical" = prob_empirical, "sampling" = prob_sampling))
 }
@@ -584,29 +577,19 @@ tdiff_empirical_vs_sampling <- function(events, L, rep=NULL, one_genotype=FALSE,
     pl_name = file.path(outdir, paste("time_diff_empirical_vs_sampling", 
                                       outname, "_j", j, ".pdf", sep=""))
     
-    if (one_genotype) {
-      df = data.frame(x=c(time_diff_empirical[, j], time_diff_sampling[ ,j]), 
-                      method=c(rep("empirical", N), rep("sampling", N)))
-      pl = ggplot(df, aes(x = x, fill = method))
-      pl = pl + geom_histogram(binwidth=binwidth, alpha=0.5, position="identity") + 
-        labs(x=expression(Z[j]), y="Frequency") + 
-        theme_bw() + theme(text=element_text(size=14))
-      
-      ggsave(pl_name, pl, width=3.5, height=2)
-      
+    if (one_genotype) { 
+      xlab = expression(Z[j])
+      ylab = ""
     } else {
-      df = data.frame(x = time_diff_empirical[, j], y = time_diff_sampling[, j])
       xlab = substitute(paste(Z[j]), list(j=j))
       ylab = substitute(paste(widehat(Z)[j]), list(j=j))
-      pl = ggplot(df, aes(x = x, y = y))
-      pl = pl + geom_point() + 
-        geom_abline(intercept = 0, slope = 1, colour="blue") + 
-        labs(x=xlab, y=ylab) + 
-        theme_bw() + theme(text=element_text(size=14))
-      
-      ggsave(pl_name, pl, width=3, height=2)
-      
     }
+    
+    pl_empirical_vs_sampling(empirical=time_diff_empirical[, j], 
+                             sampling=time_diff_sampling[, j], 
+                             xlab=xlab, ylab=ylab, N=N, 
+                             one_genotype=one_genotype, outname=pl_name, 
+                             binwidth=binwidth)
     
   }
   
@@ -666,29 +649,47 @@ dist_empirical_vs_sampling <- function(events, L, rep=NULL, one_genotype=FALSE,
   outname = file.path(outdir, paste("hamming_dist_empirical_vs_sampling", 
                                     outname, ".pdf", sep=""))
   
+  if (one_genotype) { 
+    xlab = expression(d(X,Y))
+    ylab = ""
+  } else {
+    xlab = expression(d[empirical](X,Y))
+    ylab = expression(widehat(d)(X,Y))
+  }
+  
+  pl_empirical_vs_sampling(empirical=d_empirical, sampling=d_sampling, xlab=xlab, 
+                           ylab=ylab, N=N, one_genotype=one_genotype, 
+                           outname=outname, binwidth=binwidth)
+  
+  return(list("empirical" = d_empirical, "sampling" = d_sampling))
+}
+
+
+pl_empirical_vs_sampling <- function(empirical, sampling, xlab, ylab, 
+                                     N=NULL, one_genotype=FALSE, outname="", 
+                                     binwidth=0.01) {
+  
   if (one_genotype) {
-    df = data.frame(x=c(d_empirical, d_sampling), 
+    df = data.frame(x=c(empirical, sampling), 
                     method=c(rep("empirical", N), rep("sampling", N)))
     pl = ggplot(df, aes(x = x, fill = method))
     pl = pl + geom_histogram(binwidth=binwidth, alpha=0.5, position="identity") + 
-      labs(x=expression(d(X,Y)), y="Frequency") + 
+      labs(x=xlab, y="Frequency") + 
       theme_bw() + theme(text=element_text(size=14))
     
-    ggsave(outname, pl, width=3.5, height=2)
+    ggsave(outname, pl, width=4, height=2.5)
     
   } else {
-    df = data.frame(x = d_empirical, y = d_sampling)
+    df = data.frame(x = empirical, y = sampling)
     pl = ggplot(df, aes(x = x, y = y))
     pl = pl + geom_point() + 
       geom_abline(intercept = 0, slope = 1, colour="blue") + 
-      labs(x = expression(d[empirical](X,Y)), y = expression(widehat(d)(X,Y))) + 
+      labs(x = xlab, y = ylab) + 
       theme_bw() + theme(text=element_text(size=14))
     
     ggsave(outname, pl, width=3, height=2)
   }
   
-  
-  return(list("empirical" = d_empirical, "sampling" = d_sampling))
 }
 
 
