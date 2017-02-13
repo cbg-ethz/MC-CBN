@@ -44,20 +44,20 @@ relative_abs_error_hcbn = matrix(0, nrow=length(p), ncol=K)
 runtime_hcbn            = matrix(0, nrow=length(p), ncol=K)
 
 for (i in 1:length(p)) {
-  res = foreach(j = 1:K, .combine=rbind) %dopar% {
+  res = foreach(k = 1:K, .combine=rbind) %dopar% {
     poset = random_poset(p[i]) 
     lambdas = runif(p[i], 1/3*lambda_s, 3*lambda_s)
     simulated_obs = sample_genotypes(N[i], poset=poset, sampling_param=lambda_s, 
                                      lambdas=lambdas, eps=eps)
-    t0 <- Sys.time()
+    t0 = Sys.time()
     ret = MCEM_hcbn(poset, simulated_obs$obs_events)
     run_t_mc = as.numeric(difftime(Sys.time(), t0, units='mins'))
-    llhood_mc = obs_log_likelihood(simulated_obs$obs_events, poset, ret$lambdas,
-                                lambda_s, ret$eps, L=10000)
+    llhood_mc = obs_log_likelihood(simulated_obs$obs_events, poset, ret$lambdas, 
+                                   lambda_s, ret$eps, L=10000)
     error_mc = mean(abs(ret$lambdas - lambdas))/mean(lambdas)
     
     # save observations and poset for h-cbn
-    filename = paste("simulated_obs_n", N[i], "_p", p[i], "_j", j, sep="")
+    filename = paste("simulated_obs_N", N[i], "_p", p[i], "_k", k, sep="")
     write(c(N[i], p[i]+1), file.path(datadir, paste(filename, ".pat", sep="")))
     write.table(cbind(rep(1, N[i]), simulated_obs$obs_events), 
                 file.path(datadir, paste(filename, ".pat", sep="")),
@@ -69,7 +69,7 @@ for (i in 1:length(p)) {
       dir.create(file.path(datadir, filename))
     }
     
-    t0 <- Sys.time()
+    t0 = Sys.time()
     system(paste(OMPthreads, hcbn_path, "h-cbn -f", datadir, filename, " -w > ", datadir,
                  filename, ".out.txt", sep=""))
     run_t_hcbn = as.numeric(difftime(Sys.time(), t0, units='mins'))
