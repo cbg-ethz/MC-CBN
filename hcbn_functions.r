@@ -728,7 +728,7 @@ MCEM_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0,
     
   } else {
     avg_sampling_t = mean(sampling_times)
-    if (sampling = 'naive') {
+    if (sampling == 'naive') {
       warning("Naive proposal doesn't account for sampling times")
     }
   }
