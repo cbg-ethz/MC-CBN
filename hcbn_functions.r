@@ -327,7 +327,7 @@ log_cbn_density <- function(Tdiff, rate) {
 
 
 importance_weight <- function(genotype, L, poset, lambdas, lambda_s, eps, 
-                              sampling_time, add_prob=0.5, perturb_prob=0.8,
+                              sampling_time=NULL, add_prob=0.5, perturb_prob=0.8,
                               sampling=c('naive', 'add-remove')) {
   
   sampling = match.arg(sampling)
@@ -693,14 +693,32 @@ pl_empirical_vs_sampling <- function(empirical, sampling, xlab, ylab,
 }
 
 
-MCMC_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0, max_iter=100,  
-                      burn_in=0.2, L=100, max_lambda_val=1e6, verbose=TRUE)  {
+MCEM_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0,   
+                      max_iter=100, burn_in=0.8, L=100, 
+                      sampling=c('naive', 'add-remove'), max_lambda_val=1e6, 
+                      add_prob=0.5, perturb_prob=0.8, verbose=TRUE)  {
+  
+  # obs_events     matrix of observations, each row correponds to a vector 
+  #                indicating whether an event has been observed (1) or not (0)
+  # sampling_times vector of sampling times per observation/genotype 
+  # L              number of samples to be drawn from the proposal
+  # sampling       type of sampling. OPTIONS: 'naive' or 'add-remove'.
+  # add_prob       Incompatible genotypes are made compatible by adding or 
+  #                removing observations. One of the two operations is chosen 
+  #                by drawing a random number, and if this number is > add_prob,  
+  #                then observations are added. Option is used if sampling is 
+  #                set to 'add-remove'.
+  # perturb_prob   Genotypes are perturbed in order to learn epsilon. A genotype 
+  #                is perturbed, if after drawing a random number, this is <
+  #                perturb_prob, otherwise X_start = X
+  # NOTE: If 'naive' sampling is employed, sampling times are not used. 
+  sampling = match.arg(sampling)
   
   p = ncol(poset)       # number of events/mutations
   N = nrow(obs_events)  # number of observations/genotypes
   
   if (is.null(sampling_times)) {
-    sampling_times = rep(0, nrow(obs_events))
+    #sampling_times = rep(0, nrow(obs_events))
     avg_sampling_t = lambda_s
   } else {
     avg_sampling_t = mean(sampling_times)
@@ -708,37 +726,100 @@ MCMC_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0, max_
   
   # initialize parameters
   eps = runif(1, 0, 0.5)
-  lambdas = initialize_lambda(obs_events=obs_events, average_sampling_times=avg_sampling_t,
+  lambdas = initialize_lambda(obs_events=obs_events, 
+                              average_sampling_times=avg_sampling_t, 
                               poset=poset, verbose=verbose)
   
   avg_eps = 0 
   avg_lambdas = numeric(p)
   avg_llhood = 0
   
-  record_iter = max(as.integer((1-burn_in) * max_iter), 1)
+  record_iter = max(as.integer(burn_in * max_iter), 1)
+  
+  if (sampling == 'add-remove') {
+    poset_trans_closed = trans_closure(poset)
+    parents = get_parents(poset_trans_closed)
+    childreen = get_childreen(poset_trans_closed)
+    # TODO: at the moment, compatibility test is performed for each genotype
+    #idx_compatible = apply(obs_events, 1, is_compatible, poset=poset)
+  }
   
   for(iter in 1:max_iter) {
     
     # E step
     # Compute for each event j, expected_Tdiff[j] = E[T_j - max_{u \in pa(j)} T_u | Y]
     # Compute expected_dist
-    expected_dist = numeric(N)
-    expected_Tdiff = matrix(0, nrow=N, ncol=p)
-    for(i in 1:N) {
-      # Draw L samples from poset with parameters "lambdas" 
-      simGenotypes = sample_genotypes(L, poset=poset, sampling_param=lambda_s,
-                                      lambdas=lambdas)
+    
+    if (sampling == 'naive') {
+      expected_dist = numeric(N)
+      expected_Tdiff = matrix(0, nrow=N, ncol=p)
+      for(i in 1:N) {
+        # Draw L samples from poset with parameters 'lambdas' and 'lambda_s'
+        e_step = importance_weight(genotype=obs_events[i, ], L=L, poset=poset,
+                                   lambdas=lambdas, lambda_s=lambda_s, eps=eps,
+                                   sampling_time=NULL, sampling='naive')
+        # Conditional expectation of the sufficient statistic d(X, Y)
+        expected_dist[i] = sum(e_step$w * e_step$dist) / sum(e_step$w)
+
+        # Contitional expectation of the sufficient statistic Z_j
+        # Z_j = t_j - max_{u \in pa(j)} t_u
+        expected_Tdiff[i, ] = colSums(e_step$w * e_step$time_differences) /
+          sum(e_step$w)
+      }
       
-      # Conditional expectation of the sufficient statistic d(X, Y)
-      dist = apply(simGenotypes$obs_events, 1, hamming_dist, y=obs_events[i, ])
-      pr_Y_X = eps^dist * (1-eps)^(p-dist) 
-      expected_dist[i] = sum(pr_Y_X * dist) / sum(pr_Y_X)
+      # ret = foreach(i=1:N, .combine='rbind') %dopar% {
+      # 
+      #   # Draw L samples from poset with parameters 'lambdas' and 'lambda_s'
+      #   e_step = importance_weight(genotype=obs_events[i, ], L=L, poset=poset,
+      #                              lambdas=lambdas, lambda_s=lambda_s, eps=eps,
+      #                              sampling_time=NULL, sampling='naive')
+      #   # Conditional expectation of the sufficient statistic d(X, Y)
+      #   expected_dist = sum(e_step$w * e_step$dist) / sum(e_step$w)
+      # 
+      #   # Contitional expectation of the sufficient statistic Z_j
+      #   # Z_j = t_j - max_{u \in pa(j)} t_u
+      #   expected_Tdiff = colSums(e_step$w * e_step$time_differences) /
+      #     sum(e_step$w)
+      #   return(c(expected_dist, expected_Tdiff))
+      # 
+      # }
+      # expected_dist = ret[, 1]
+      # expected_Tdiff = ret[, -1]
+      # colnames(expected_Tdiff) = NULL
       
-      # Contitional expectation of the sufficient statistic Z_j
-      # Z_j = t_j - max_{u \in pa(j)} t_u
-      expected_Tdiff[i, ] = apply(simGenotypes$T_events, 2,
-                                  function(x) sum(x * pr_Y_X)) / sum(pr_Y_X)
+    } else if (sampling == 'add-remove') {
       
+      ret = foreach(i=1:N, .combine='rbind') %dopar% {
+        
+        # In each iteration and for each observation, draw L samples from proposal
+        # two-steps proposal: make compatible and perturb
+        # 1. Make genotypes compatible by adding or removing 1's
+        # 2. Perturbe version of previous genotypes, but ensure it remains
+        #    compatible with current poset
+        e_step = importance_weight(genotype=obs_events[i, ], L=L, poset=poset,
+                                   lambdas=lambdas, lambda_s=lambda_s, eps=eps,
+                                   sampling_time=sampling_times[i], add_prob=add_prob,
+                                   perturb_prob=perturb_prob, sampling='add-remove')
+        # Conditional expectation of the sufficient statistic d(X, Y)
+        expected_dist = sum(e_step$w * e_step$dist) / sum(e_step$w)
+        
+        # Contitional expectation of the sufficient statistic Z_j
+        # Z_j = t_j - max_{u \in pa(j)} t_u
+        expected_Tdiff = colSums(e_step$w * e_step$time_differences) /
+          sum(e_step$w)
+        return(c(expected_dist, expected_Tdiff))
+        
+      }
+      expected_dist = ret[, 1]
+      expected_Tdiff = ret[, -1]
+      colnames(expected_Tdiff) = NULL
+    }
+    
+    if (any(is.na(expected_Tdiff))) {
+      stop("Unexpected value for expected time differences")
+    }
+    if (any(is.na(expected_dist))) {
+      stop("Unexpected value for expected time differences")
     }
     
     # M step
@@ -771,3 +852,5 @@ MCMC_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0, max_
   return(list("lambdas"=lambdas, "eps"=eps, "llhood"=llhood, "avg_lambdas"=avg_lambdas, 
               "avg_eps"=avg_eps, "avg_llhood"=avg_llhood))
 }
+
+

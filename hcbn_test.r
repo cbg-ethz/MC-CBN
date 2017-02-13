@@ -118,7 +118,8 @@ obs_log_likelihood(simulated_obs$obs_events, poset, lambdas, lambda_s,
                    eps, L=10000) #-267.8936
 
 # MC-CBN, error model: h-cbn
-ret = MCMC_hcbn(poset, simulated_obs$obs_events)
+ret = MCEM_hcbn(poset, simulated_obs$obs_events, sampling_times=NULL, 
+                lambda_s=lambda_s, sampling='naive')
 abs(ret$lambdas - lambdas)/lambdas
 abs(ret$avg_lambdas - lambdas)/lambdas
 abs(ret$eps - eps)
@@ -166,7 +167,8 @@ obs_log_likelihood(simulated_obs$obs_events, poset, lambdas, lambda_s, eps,
                    exact=TRUE) # N=100, -340.4663; N=1000, -3374.1
 
 # MC-CBN, error model: h-cbn
-ret = MCMC_hcbn(poset, simulated_obs$obs_events)
+ret = MCEM_hcbn(poset, simulated_obs$obs_events, sampling_times=NULL, 
+                lambda_s=lambda_s, sampling='naive')
 obs_log_likelihood(simulated_obs$obs_events, poset, ret$avg_lambdas, lambda_s, 
                    ret$avg_eps, L=10000) # N=100, -305.5238; N=1000, -3109.656
 
@@ -196,9 +198,10 @@ registerDoMC(thrds)
 
 set.seed(10)
 p = 2^seq(2, 5, 1)
-N = rep(50, 4) #sapply(50*p, min, 1000)
+N = sapply(50*p, min, 1000)
 L = 1000
 
+t0 <- Sys.time()
 effective_sample_size = foreach (k = 1:length(p)) %dopar% {
   poset = random_poset(p[k])
   lambdas = runif(p[k], 1/3*lambda_s, 3*lambda_s)
@@ -207,19 +210,99 @@ effective_sample_size = foreach (k = 1:length(p)) %dopar% {
   Ne = numeric(N[k])
   for (i in 1:N[k]) {
     w = importance_weight(simulated_obs$obs_events[i, ], L=L, poset, lambdas,
-                          lambda_s, eps, sampling='naive')
+                          lambda_s, eps, sampling_time=NULL, sampling='naive')
     Ne[i] = sum(w$w)^2 / sum(w$w^2)
   }
   return(Ne)
 }
+runtime = as.numeric(difftime(Sys.time(), t0, units='mins'))
+# [1] 0.007787617, N=10 L=100
+# [1] 0.1767732, N=variable, L=100
+# [1] 0.713641, N=variable, L=1000
 
-df = data.frame(x=rep(p, N), y=unlist(effective_sample_size))
+df = data.frame(x=rep(p, N), y=unlist(effective_sample_size) * 100 /L)
 
 pl = ggplot(df, aes(x=factor(x), y=y)) + 
   geom_boxplot(varwidth=TRUE, fill='cornflowerblue') + 
-  labs(x="\n poset size", y="effective sample \n") + 
+  labs(x="\n poset size", y="effective sample [%] \n") + 
   theme_bw() + theme(text=element_text(size=14))
 
 ggsave(file.path(outdir, paste("L", L, "_naive", sep=""), 
                  "effective_sample_size.pdf"),
        pl, width=3.5, height=2.5)
+
+
+
+############## alternative 
+effective_sample_size = list()
+t0 <- Sys.time()
+for (k in 1:length(p)) {
+  poset = random_poset(p[k])
+  lambdas = runif(p[k], 1/3*lambda_s, 3*lambda_s)
+  simulated_obs = sample_genotypes(N[k], poset, sampling_param=lambda_s, 
+                                   lambdas=lambdas, eps=eps)
+  
+  Ne = foreach (i = 1:N[k], .combine='c') %dopar% {
+    w = importance_weight(simulated_obs$obs_events[i, ], L=L, poset, lambdas,
+                          lambda_s, eps, sampling_time=NULL, sampling='naive')
+    return(sum(w$w)^2 / sum(w$w^2))
+  }
+  effective_sample_size[[k]] = Ne
+}
+runtime = as.numeric(difftime(Sys.time(), t0, units='mins'))
+# [1] 0.006354133, N=10 L=100
+# [1] 0.1195011, N=variable, L=100
+# [1] 0.5157152, N=variable, L=1000
+
+
+###############################################################################
+### TEST 4
+###############################################################################
+# MC sequential vs parallel execution 
+library(doMC)
+thrds = 4
+registerDoMC(thrds)
+
+set.seed(10)
+t0 <- Sys.time()
+res = MCEM_hcbn(poset, simulated_obs$obs_events, sampling_times=NULL, 
+                lambda_s=lambda_s, max_iter=100, burn_in=0.8, L=1000, 
+                sampling='naive', max_lambda_val=1e6, verbose=TRUE)
+runtime = as.numeric(difftime(Sys.time(), t0, units='mins'))
+# [1] 0.1748256, p=5, N = 100, L = 100, iter = 100 (sequential V1), llhood=-959.3795, avg_llhood=-936.5417, eps=0.05618664, avg_eps=0.05370221
+# [1] 0.1796839, p=5, N = 100, L = 100, iter = 100 (sequential V2), llhood=-959.3795, avg_llhood=-936.5417, eps=0.05618664, avg_eps=0.05370221
+# [1] 0.3217676, p=5, N = 100, L = 100, iter = 100 (parallel), llhood=-956.5396, avg_llhood=-946.7611, eps=0.05619123, avg_eps=0.05347745
+# [1] 1.702708, p=5, N = 1000, L = 100, iter = 100 (sequential V2), llhood=-9588.573, avg_llhood=-9672.281, eps=0.06164169, avg_eps=0.0621152
+# [1] 1.898503, p=5, N = 1000, L = 100, iter = 100 (parallel), llhood=-9739.016, avg_llhood=-9716.249, eps=0.06312477, avg_eps=0.06283835
+# [1] 0.266757, p=10, N = 100, L = 100, iter = 100 (sequential V2)
+# [1] 0.3917821, p=10, N = 100, L = 100, iter = 100 (parallel), llhood=-3261.107, avg_llhood=-3169.789, eps=0.08171619, avg_eps=0.07664412
+# [1] 0.9910405, p=5, N = 100, L = 1000, iter = 100 (sequential V2) llhood=-810.537, avg_llhood=-824.4606, eps=0.03436807, avg_eps=0.0358638
+# [1] 0.7937994, p=5, N = 100, L = 1000, iter = 100 (parallel), llhood=-840.768, avg_llhood=-825.9859, eps=0.03763364, avg_eps=0.03598054
+# [1] 9.935725, p=5, N = 1000, L = 1000, iter = 100 (sequential V2), llhood=-8540.092, avg_llhood=-8527.665, eps=0.04532772, avg_eps=0.04532164
+# [1] 5.991118, p=5, N = 1000, L = 1000, iter = 100 (parallel), llhood=-8489.843, avg_llhood=-8514.486, eps=0.04481564, avg_eps=0.04506162
+
+mean(abs(res$lambdas - lambdas))/mean(lambdas)
+# [1] 0.06016701, p=5, N = 100, L = 100, iter = 100 (sequential V1)
+# [1] 0.06016701, p=5, N = 100, L = 100, iter = 100 (sequential V2)
+# [1] 0.05343616, p=5, N = 100, L = 100, iter = 100 (parallel)
+# [1] 0.1243405, p=5, N = 1000, L = 100, iter = 100 (sequential V2)
+# [1] 0.1122377, p=5, N = 1000, L = 100, iter = 100 (parallel)
+# [1] 0.7943565, p=10, N = 100, L = 100, iter = 100 (sequential V2)
+# [1] 0.736323, p=10, N = 100, L = 100, iter = 100 (parallel)
+# [1] 0.06936015, p=5, N = 100, L = 1000, iter = 100 (sequential V2)
+# [1] 0.0781487, p=5, N = 100, L = 1000, iter = 100 (parallel)
+# [1] 0.07730737, p=5, N = 1000, L = 1000, iter = 100 (sequential V2)
+# [1] 0.07993592, p=5, N = 1000, L = 1000, iter = 100 (parallel)
+
+mean(abs(res$avg_lambdas - lambdas))/mean(lambdas)
+# [1] 0.05160423, p=5, N = 100, L = 100, iter = 100 (sequential V1)
+# [1] 0.05160423, p=5, N = 100, L = 100, iter = 100 (sequential V2)
+# [1] 0.05316635, p=5, N = 100, L = 100, iter = 100 (parallel)
+# [1] 0.1116793, p=5, N = 1000, L = 100, iter = 100 (sequential V2)
+# [1] 0.1153271, p=5, N = 1000, L = 100, iter = 100 (parallel)
+# [1] 0.6395589, p=10, N = 100, L = 100, iter = 100 (sequential V2)
+# [1] 0.6401699, p=10, N = 100, L = 100, iter = 100 (parallel)
+# [1] 0.07452685, p=5, N = 100, L = 1000, iter = 100 (sequential V2)
+# [1] 0.07595211, p=5, N = 100, L = 1000, iter = 100 (parallel)
+# [1] 0.07941715, p=5, N = 1000, L = 1000, iter = 100 (sequential V2)
+# [1] 0.07881623, p=5, N = 1000, L = 1000, iter = 100 (parallel)
