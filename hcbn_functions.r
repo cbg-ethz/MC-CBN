@@ -36,7 +36,11 @@ complete_log_likelihood <- function(lambdas, Tdiff, dist, eps) {
 
 
 obs_log_likelihood <- function(obs_events, poset, lambdas, lambda_s, eps, 
-                               L=1000, exact=FALSE) {
+                               sampling_times=NULL, L=1000, 
+                               sampling=c('naive', 'add-remove'), exact=FALSE) {
+  
+  sampling = match.arg(sampling)
+  
   if (exact) {
     p = length(lambdas)
     N = nrow(obs_events)
@@ -49,8 +53,19 @@ obs_log_likelihood <- function(obs_events, poset, lambdas, lambda_s, eps,
       llhood = llhood + (N - mutated) * log((1-eps) * Pr_X_0 + eps * Pr_X_1)
     } 
   } else {
-    prob_Y = apply(obs_events, 1, prob_imp, L=L, poset=poset, lambdas=lambdas, 
-                   lambda_s=lambda_s, eps=eps)
+    if (is.null(sampling_times)) {
+      prob_Y = apply(obs_events, 1, prob_importance_sampling, L=L, poset=poset,
+                     lambdas=lambdas, lambda_s=lambda_s, eps=eps, 
+                     sampling_time=NULL, sampling=sampling)
+    } else {
+      N = nrow(obs_events)
+      prob_Y = sapply(1:N, function(i) {
+        prob_importance_sampling(genotype=obs_events[i, ], L=L, poset=poset, 
+                                 lambdas=lambdas, lambda_s=lambda_s, eps=eps, 
+                                 sampling_time=sampling_times[i], sampling=sampling)
+      })
+    }
+    
     llhood = sum(log(prob_Y))
   }
   
