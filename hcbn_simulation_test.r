@@ -2,7 +2,7 @@ library(mccbn)
 library(doMC)
 
 ############################### INPUT OPTIONS ################################
-L = 100                             # number of repetitions
+K = 100                             # number of repetitions
 p = seq(4, 12, 2)                   # number of events
 lambda_s = 1                        # sampling rate
 N = sapply(50*p, min, 1000)         # number of observations / genotypes
@@ -36,22 +36,22 @@ set.seed(47)
 registerDoMC(thrds)
 OMPthreads = paste("OMP_NUM_THREADS=", thrds, " ", sep="")
 
-obs_llhood_mc           = matrix(0, nrow=length(p), ncol=L)
-relative_abs_error_mc   = matrix(0, nrow=length(p), ncol=L)
-runtime_mc              = matrix(0, nrow=length(p), ncol=L)
-obs_llhood_hcbn         = matrix(0, nrow=length(p), ncol=L)
-relative_abs_error_hcbn = matrix(0, nrow=length(p), ncol=L)
-runtime_hcbn            = matrix(0, nrow=length(p), ncol=L)
+obs_llhood_mc           = matrix(0, nrow=length(p), ncol=K)
+relative_abs_error_mc   = matrix(0, nrow=length(p), ncol=K)
+runtime_mc              = matrix(0, nrow=length(p), ncol=K)
+obs_llhood_hcbn         = matrix(0, nrow=length(p), ncol=K)
+relative_abs_error_hcbn = matrix(0, nrow=length(p), ncol=K)
+runtime_hcbn            = matrix(0, nrow=length(p), ncol=K)
 
 for (i in 1:length(p)) {
-  res = foreach(j = 1:L, .combine=rbind) %dopar% {
+  res = foreach(j = 1:K, .combine=rbind) %dopar% {
     poset = random_poset(p[i]) 
     lambdas = runif(p[i], 1/3*lambda_s, 3*lambda_s)
-    simulated_obs = sample_genotypes(N[i], poset, sampling_param=lambda_s, 
+    simulated_obs = sample_genotypes(N[i], poset=poset, sampling_param=lambda_s, 
                                      lambdas=lambdas, eps=eps)
     t0 <- Sys.time()
-    ret = MCMC_hcbn(poset, simulated_obs$obs_events)
-    run_t_mc = as.numeric(difftime(Sys.time(), t0))
+    ret = MCEM_hcbn(poset, simulated_obs$obs_events)
+    run_t_mc = as.numeric(difftime(Sys.time(), t0, units='mins'))
     llhood_mc = obs_log_likelihood(simulated_obs$obs_events, poset, ret$lambdas,
                                 lambda_s, ret$eps, L=10000)
     error_mc = mean(abs(ret$lambdas - lambdas))/mean(lambdas)
@@ -72,7 +72,7 @@ for (i in 1:length(p)) {
     t0 <- Sys.time()
     system(paste(OMPthreads, hcbn_path, "h-cbn -f", datadir, filename, " -w > ", datadir,
                  filename, ".out.txt", sep=""))
-    run_t_hcbn = as.numeric(difftime(Sys.time(), t0))
+    run_t_hcbn = as.numeric(difftime(Sys.time(), t0, units='mins'))
     lambdas_hcbn = read.csv(file.path(datadir, 
                                       paste(filename, ".lambda", sep="")))
     lambdas_hcbn = as.vector(t(lambdas_hcbn))
