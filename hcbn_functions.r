@@ -696,7 +696,8 @@ pl_empirical_vs_sampling <- function(empirical, sampling, xlab, ylab,
 MCEM_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0,   
                       max_iter=100, burn_in=0.8, L=100, 
                       sampling=c('naive', 'add-remove'), max_lambda_val=1e6, 
-                      add_prob=0.5, perturb_prob=0.8, verbose=TRUE)  {
+                      add_prob=0.5, perturb_prob=0.8, parallel=TRUE, 
+                      verbose=TRUE)  {
   
   # obs_events     matrix of observations, each row correponds to a vector 
   #                indicating whether an event has been observed (1) or not (0)
@@ -710,18 +711,26 @@ MCEM_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0,
   #                set to 'add-remove'.
   # perturb_prob   Genotypes are perturbed in order to learn epsilon. A genotype 
   #                is perturbed, if after drawing a random number, this is <
-  #                perturb_prob, otherwise X_start = X
-  # NOTE: If 'naive' sampling is employed, sampling times are not used. 
+  #                perturb_prob, otherwise X_start = X. Option is used if  
+  #                sampling is set to 'add-remove'.
+  # parallel       boolean variable indicating whether sampling should be
+  #                executed sequentially (0) or in parallel (1). Option is used if
+  #                sampling is set to 'naive'.
+  # NOTE: If 'naive' sampling is employed, sampling times are not used.
+  
   sampling = match.arg(sampling)
   
   p = ncol(poset)       # number of events/mutations
   N = nrow(obs_events)  # number of observations/genotypes
   
   if (is.null(sampling_times)) {
-    #sampling_times = rep(0, nrow(obs_events))
     avg_sampling_t = lambda_s
+    
   } else {
     avg_sampling_t = mean(sampling_times)
+    if (sampling = 'naive') {
+      warning("Naive proposal doesn't account for sampling times")
+    }
   }
   
   # initialize parameters
@@ -751,41 +760,44 @@ MCEM_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0,
     # Compute expected_dist
     
     if (sampling == 'naive') {
-      expected_dist = numeric(N)
-      expected_Tdiff = matrix(0, nrow=N, ncol=p)
-      for(i in 1:N) {
-        # Draw L samples from poset with parameters 'lambdas' and 'lambda_s'
-        e_step = importance_weight(genotype=obs_events[i, ], L=L, poset=poset,
-                                   lambdas=lambdas, lambda_s=lambda_s, eps=eps,
-                                   sampling_time=NULL, sampling='naive')
-        # Conditional expectation of the sufficient statistic d(X, Y)
-        expected_dist[i] = sum(e_step$w * e_step$dist) / sum(e_step$w)
-
-        # Contitional expectation of the sufficient statistic Z_j
-        # Z_j = t_j - max_{u \in pa(j)} t_u
-        expected_Tdiff[i, ] = colSums(e_step$w * e_step$time_differences) /
-          sum(e_step$w)
-      }
       
-      # ret = foreach(i=1:N, .combine='rbind') %dopar% {
-      # 
-      #   # Draw L samples from poset with parameters 'lambdas' and 'lambda_s'
-      #   e_step = importance_weight(genotype=obs_events[i, ], L=L, poset=poset,
-      #                              lambdas=lambdas, lambda_s=lambda_s, eps=eps,
-      #                              sampling_time=NULL, sampling='naive')
-      #   # Conditional expectation of the sufficient statistic d(X, Y)
-      #   expected_dist = sum(e_step$w * e_step$dist) / sum(e_step$w)
-      # 
-      #   # Contitional expectation of the sufficient statistic Z_j
-      #   # Z_j = t_j - max_{u \in pa(j)} t_u
-      #   expected_Tdiff = colSums(e_step$w * e_step$time_differences) /
-      #     sum(e_step$w)
-      #   return(c(expected_dist, expected_Tdiff))
-      # 
-      # }
-      # expected_dist = ret[, 1]
-      # expected_Tdiff = ret[, -1]
-      # colnames(expected_Tdiff) = NULL
+      if (!parallel) {
+        expected_dist = numeric(N)
+        expected_Tdiff = matrix(0, nrow=N, ncol=p)
+        for(i in 1:N) {
+          # Draw L samples from poset with parameters 'lambdas' and 'lambda_s'
+          e_step = importance_weight(genotype=obs_events[i, ], L=L, poset=poset,
+                                     lambdas=lambdas, lambda_s=lambda_s, eps=eps,
+                                     sampling_time=NULL, sampling='naive')
+          # Conditional expectation of the sufficient statistic d(X, Y)
+          expected_dist[i] = sum(e_step$w * e_step$dist) / sum(e_step$w)
+          
+          # Contitional expectation of the sufficient statistic Z_j
+          # Z_j = t_j - max_{u \in pa(j)} t_u
+          expected_Tdiff[i, ] = colSums(e_step$w * e_step$time_differences) /
+            sum(e_step$w)
+        }
+      } else {
+        ret = foreach(i=1:N, .combine='rbind') %dopar% {
+          
+          # Draw L samples from poset with parameters 'lambdas' and 'lambda_s'
+          e_step = importance_weight(genotype=obs_events[i, ], L=L, poset=poset,
+                                     lambdas=lambdas, lambda_s=lambda_s, eps=eps,
+                                     sampling_time=NULL, sampling='naive')
+          # Conditional expectation of the sufficient statistic d(X, Y)
+          expected_dist = sum(e_step$w * e_step$dist) / sum(e_step$w)
+          
+          # Contitional expectation of the sufficient statistic Z_j
+          # Z_j = t_j - max_{u \in pa(j)} t_u
+          expected_Tdiff = colSums(e_step$w * e_step$time_differences) /
+            sum(e_step$w)
+          return(c(expected_dist, expected_Tdiff))
+          
+        }
+        expected_dist = ret[, 1]
+        expected_Tdiff = ret[, -1]
+        colnames(expected_Tdiff) = NULL 
+      }
       
     } else if (sampling == 'add-remove') {
       
