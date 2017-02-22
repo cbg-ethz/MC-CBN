@@ -267,7 +267,8 @@ set.seed(10)
 t0 <- Sys.time()
 res = MCEM_hcbn(poset, simulated_obs$obs_events, sampling_times=NULL, 
                 lambda_s=lambda_s, max_iter=100, burn_in=0.8, L=1000, 
-                sampling='naive', max_lambda_val=1e6, verbose=TRUE)
+                sampling='naive', parallel=FALSE, max_lambda_val=1e6, 
+                verbose=TRUE)
 runtime = as.numeric(difftime(Sys.time(), t0, units='mins'))
 # [1] 0.1748256, p=5, N = 100, L = 100, iter = 100 (sequential V1), llhood=-959.3795, avg_llhood=-936.5417, eps=0.05618664, avg_eps=0.05370221
 # [1] 0.1796839, p=5, N = 100, L = 100, iter = 100 (sequential V2), llhood=-959.3795, avg_llhood=-936.5417, eps=0.05618664, avg_eps=0.05370221
