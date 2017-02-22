@@ -754,6 +754,13 @@ MCEM_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0,
                               average_sampling_times=avg_sampling_t, 
                               poset=poset, verbose=verbose)
   
+  # NOTE: function initialize_lambda should be modify to account for cases where
+  #       sum(obs_events[parents_i == 1, i]) is zero. 
+  if (any(lambdas == 0))  {
+    idxs = which(lambdas == 0)
+    lambdas[idxs] = 1e-6
+  }
+  
   avg_eps = 0 
   avg_lambdas = numeric(p)
   avg_llhood = 0
