@@ -290,7 +290,8 @@ draw_samples <- function(genotype, L, parents, childreen, compatible,
 
 rtexp <- function(x, rate) {
   rand_num = runif(1, 0, 1)
-  return(-log(1 - rand_num * (1 - exp(-rate * x))) / rate)
+  Z = ifelse(x > 0, -log(1 - rand_num * (1 - exp(-rate * x))) / rate, 0) 
+  return(Z)
 }
 
 
@@ -319,6 +320,10 @@ sample_mutation_times <- function(genotype, poset, lambdas, lambda_s=1.0,
     
     if (genotype[j] == 1) {
       # If mutation is observed, Z ~ TExp(lambda, 0, sampling_time - max_parents_t)
+      # When a lot of mutations have occurred max_parents_t approaches the 
+      # sampling_time. Due to numerical precision problems, 
+      # sampling_time < max_parents_t. Therefore, we have to make sure that when it 
+      # happens rtexp returns 0
       Z = rtexp(sampling_time - max_parents_t, rate=lambdas[j])
       Tsum[j] =  max_parents_t + Z
       dens = dens +  dexp(Z, rate=lambdas[j], log=TRUE) - 
@@ -370,8 +375,7 @@ importance_weight <- function(genotype, L, poset, lambdas, lambda_s, eps,
     parents = get_parents(poset_trans_closed)
     childreen = get_childreen(poset_trans_closed)
     compatible = is_compatible(genotype, poset)
-    # Generate L samples from poset with parameters 'lambdas' and 'lambda_s' 
-    # according to proposal
+    # Generate L samples according to proposal
     samples = draw_samples(genotype, L, parents, childreen, compatible,  
                            add_prob, perturb_prob)
     
@@ -786,7 +790,7 @@ MCEM_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0,
       if (!parallel) {
         expected_dist = numeric(N)
         expected_Tdiff = matrix(0, nrow=N, ncol=p)
-        for(i in 1:N) {
+        for (i in 1:N) {
           # Draw L samples from poset with parameters 'lambdas' and 'lambda_s'
           e_step = importance_weight(genotype=obs_events[i, ], L=L, poset=poset,
                                      lambdas=lambdas, lambda_s=lambda_s, eps=eps,
