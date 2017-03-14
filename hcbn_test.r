@@ -113,26 +113,43 @@ mean(apply(X_comp, 1, hamming_dist, y=genotype))
 # MC-CBN using H-CBN error model and mixture model, and H-CBN
 set.seed(10)
 dist = rowSums(simulated_obs$obs_events != simulated_obs$hidden_genotypes)
-llhood = complete_log_likelihood(lambdas, simulated_obs$T_events, dist, eps)
+llhood = complete_log_likelihood(lambdas, simulated_obs$T_events, dist, eps) #-965.9702
 obs_log_likelihood(simulated_obs$obs_events, poset, lambdas, lambda_s, 
-                   eps, L=10000) #-267.8936
+                   eps, L=10000, sampling='naive') #-267.8936
 
 # MC-CBN, error model: h-cbn
 ret = MCEM_hcbn(poset, simulated_obs$obs_events, sampling_times=NULL, 
-                lambda_s=lambda_s, sampling='naive')
+                lambda_s=lambda_s, sampling='naive', parallel=FALSE)
 abs(ret$lambdas - lambdas)/lambdas
 abs(ret$avg_lambdas - lambdas)/lambdas
 abs(ret$eps - eps)
 abs(ret$llhood - llhood)
 obs_log_likelihood(simulated_obs$obs_events, poset, ret$avg_lambdas, lambda_s, 
-                   ret$avg_eps, L=10000) ## N=100, L=100, -268.4495
+                   ret$avg_eps, L=10000, sampling='naive') ## N=100, L=100, -268.4495
 
 # MC-CBN, error model: mixture model
-compatible_idx = apply(simulated_obs$obs_events, 1, is_compatible, poset=poset)
-ret_mixture = estimate_mutation_rates(poset, 
-                                      simulated_obs$obs_events[compatible_idx, ])
+compatible_obs = compatible_genotypes(simulated_obs$obs_events, poset)
+ret_mixture = 
+  estimate_mutation_rates(poset,
+                          simulated_obs$obs_events[compatible_obs$compatible_indexes, ])
 abs(ret_mixture$par - lambdas)/lambdas
-ret_mixture$ll ## N=100, L=5, -432.9113
+ret_mixture$ll ## N=100, L=5, -432.9113 (complete-data log-likelihood)
+geno_prob_noise = 
+  genotype_probs_empty_poset(simulated_obs$obs_events[-compatible_obs$compatible_indexes, ], 
+                             sampling_times=rep(0, (1-compatible_obs$fraction)*N),
+                             weights=rep(1, (1-compatible_obs$fraction)*N), 
+                             max_iter=100, zeta=0.2, nrOfSamplesForEStep=50, 
+                             verbose=FALSE, maxLambdaValue=1e6, lambda_s=lambda_s,
+                             sampling_times_available=FALSE)
+llhood_incompatible = 
+  incompatible_loglike(poset, simulated_obs$obs_events, sampling_times=rep(0, N), 
+                       weights=rep(1, N), compatible_geno=compatible_obs, 
+                       noise_model="empty", geno_prob_noise=geno_prob_noise) # -28.75601, alpha=0.95
+loglike_mixture_model(poset, ret_mixture$par, simulated_obs$obs_events, 
+                      sampling_times=rep(0, N), weights=rep(1, N), 
+                      nrOfSamples=100, compatible_geno=compatible_obs, 
+                      incomp_loglike=llhood_incompatible, lambda_s=lambda_s, 
+                      sampling_times_available=FALSE) ## N=100, L=5, -269.3529
 
 # hcbn
 filename = paste("simulated_obs_n", N, "_p", p, sep="")
@@ -149,7 +166,7 @@ abs(lambdas_hcbn - lambdas)/lambdas
 
 # sanity check (h-cbn report -267.308)
 obs_log_likelihood(simulated_obs$obs_events, poset, lambdas_hcbn, lambda_s, 
-                   0.034023, L=10000) # N=100, -268.256
+                   0.034023, L=10000) # N=100, -268.256 / -267.3038
 
 ###############################################################################
 ### TEST 3
