@@ -27,8 +27,9 @@ gen_genotype <- function(p, idx) {
 
 
 complete_log_likelihood <- function(lambdas, Tdiff, dist, eps) {
+  # complete-data log-likelihood or hidden log-likelihood
   p = length(lambdas)
-  n = length(dist)
+  N = length(dist)
   llhood = N * sum(log(lambdas)) - sum(lambdas * t(Tdiff)) + 
     p * log(eps) * sum(dist) + p * log(1-eps) * sum(p - dist)
   return(llhood)
@@ -237,8 +238,8 @@ perturb <- function(events, parents, childreen, perturb_prob=0.8,
 }
 
 
-draw_samples <- function(genotype, L, parents, childreen, compatible, 
-                            add_prob=0.5, perturb_prob=0.8) {
+draw_samples <- function(genotype, L, parents, childreen, compatible, eps,
+                         perturb_prob=0.8) {
   
   # Draw L samples from the proposal
   # two-steps proposal: make compatible and perturb
@@ -249,10 +250,6 @@ draw_samples <- function(genotype, L, parents, childreen, compatible,
   # childreen:  computed on the transitively closed poset 
   # compatible: variable indicating whether the genotype is compatible (1) with 
   #             current poset or not (0)
-  # add_prob:   Incompatible genotypes are made compatible by adding or removing
-  #             observations. One of the two operations is chosen by drawing
-  #             a random number, and if this number is > add_prob, then 
-  #             observations are added.
   # perturb_prob: Genotypes are perturbed in order to learn epsilon. A genotype 
   #             is perturbed, if after drawing a random number, this is <
   #             perturb_prob, otherwise X_start = X
@@ -268,7 +265,11 @@ draw_samples <- function(genotype, L, parents, childreen, compatible,
     # versions by adding or removing observations
     compatible_by_adding = add_relations(genotype, childreen)
     compatible_by_removing = remove_relations(genotype, parents)
-    add = ifelse(runif(L, 0, 1) > add_prob, 1, 0)
+    
+    dist_add = hamming_dist(genotype, compatible_by_adding)
+    dist_remove = hamming_dist(genotype, compatible_by_removing)
+    add_prob = eps^dist_add / (eps^dist_add + eps^dist_remove)
+    add = ifelse(runif(L, 0, 1) < add_prob, 1, 0)
     compatible_obs = matrix(0, L, p)
     
     if (all(add == 1)) {
@@ -284,7 +285,7 @@ draw_samples <- function(genotype, L, parents, childreen, compatible,
     }
   }
   samples = perturb(compatible_obs, parents, childreen, perturb_prob, compatible)
-  return(samples)
+  return(list("samples"=samples, "add_prob"=add_prob))
 }
 
 
@@ -347,7 +348,7 @@ log_cbn_density <- function(Tdiff, rate) {
 
 
 importance_weight <- function(genotype, L, poset, lambdas, lambda_s, eps, 
-                              sampling_time=NULL, add_prob=0.5, perturb_prob=0.8,
+                              sampling_time=NULL, perturb_prob=0.8,
                               sampling=c('naive', 'add-remove')) {
   
   sampling = match.arg(sampling)
@@ -376,8 +377,10 @@ importance_weight <- function(genotype, L, poset, lambdas, lambda_s, eps,
     childreen = get_childreen(poset_trans_closed)
     compatible = is_compatible(genotype, poset)
     # Generate L samples according to proposal
-    samples = draw_samples(genotype, L, parents, childreen, compatible,  
-                           add_prob, perturb_prob)
+    return_list = draw_samples(genotype, L, parents, childreen, compatible, eps, 
+                               perturb_prob)
+    add_prob = return_list$add_prob
+    samples = return_list$samples
     
     # Generate mutation times Tj from sample i
     Tdiff = apply(samples$X, 1, sample_mutation_times, poset=poset,
@@ -406,6 +409,8 @@ importance_weight <- function(genotype, L, poset, lambdas, lambda_s, eps,
     log_proposal_Y_X = ifelse(is.na(num_options), log(1-perturb_prob), 
                               log(perturb_prob) + log(1/num_options))
     if (!compatible) {
+      # TODO: need to keep track which genotype was made compatible by adding or 
+      # removing -- e.g. instead of returnig add_prob, return compatible_prob
       log_proposal_Y_X = log_proposal_Y_X + log(add_prob) 
     } 
     
@@ -715,19 +720,13 @@ pl_empirical_vs_sampling <- function(empirical, sampling, xlab, ylab,
 MCEM_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0,   
                       max_iter=100, burn_in=0.8, L=100, 
                       sampling=c('naive', 'add-remove'), max_lambda_val=1e6, 
-                      add_prob=0.5, perturb_prob=0.8, parallel=TRUE, 
-                      verbose=TRUE)  {
+                      perturb_prob=0.8, parallel=TRUE, verbose=TRUE)  {
   
   # obs_events     matrix of observations, each row correponds to a vector 
   #                indicating whether an event has been observed (1) or not (0)
   # sampling_times vector of sampling times per observation/genotype 
   # L              number of samples to be drawn from the proposal
   # sampling       type of sampling. OPTIONS: 'naive' or 'add-remove'.
-  # add_prob       Incompatible genotypes are made compatible by adding or 
-  #                removing observations. One of the two operations is chosen 
-  #                by drawing a random number, and if this number is > add_prob,  
-  #                then observations are added. Option is used if sampling is 
-  #                set to 'add-remove'.
   # perturb_prob   Genotypes are perturbed in order to learn epsilon. A genotype 
   #                is perturbed, if after drawing a random number, this is <
   #                perturb_prob, otherwise X_start = X. Option is used if  
@@ -836,7 +835,7 @@ MCEM_hcbn <- function(poset, obs_events, sampling_times=NULL, lambda_s=1.0,
         #    compatible with current poset
         e_step = importance_weight(genotype=obs_events[i, ], L=L, poset=poset,
                                    lambdas=lambdas, lambda_s=lambda_s, eps=eps,
-                                   sampling_time=sampling_times[i], add_prob=add_prob,
+                                   sampling_time=sampling_times[i], 
                                    perturb_prob=perturb_prob, sampling='add-remove')
         # Conditional expectation of the sufficient statistic d(X, Y)
         expected_dist = sum(e_step$w * e_step$dist) / sum(e_step$w)
