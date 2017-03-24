@@ -1,7 +1,7 @@
-#MC-CBN
+# MC-CBN
 MC-CBN performs an efficient large-scale inference of the continuous time conjunctive Bayesian network (CBN). MC-CBN uses Monte Carlo expectation-maximization algorithm for inference of the CBN model.
 
-##Usage
+## Usage
 In this section, we explain how to use the R package on a simple example. In this example, we first generate a random poset as the true poset and assign to each node a mutation rate. Then, _N_ genotypes and corresponding sequencing times are simulated from this poset. Then, in the first task, we estimate the mutation rates for the given _true poset_. In the second task, we estimate the maximum likelihood (ML) poset for the observed data.
 
 First, we load the necessary libraries and set the random seed for the reproducibility.   
@@ -70,7 +70,7 @@ plot_poset(fit$posets[[mle_index]])
 - [Susana Posada Cespedes](https://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=192769)
 - [Niko Beerenwinkel](http://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=149417)
 
-###Contact
+### Contact
 ```
 Hesam Montazeri
 hesam.montazeri (at) bsse.ethz.ch
