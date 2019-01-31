@@ -193,7 +193,7 @@ genotype_probs_empty_poset <- function (obs_events, sampling_times, weights, max
   fit = MCEM(poset_noise, obs_events, sampling_times, max_iter=max_iter,
              weights=weights, zeta=zeta, ilambda=NULL, nrOfSamples=nrOfSamplesForEStep, verbose=verbose,
              maxLambdaValue=maxLambdaValue, lambda_s=lambda_s, sampling_times_available=sampling_times_available)
-  lambdas_noise = fit$par
+  lambdas_noise = fit$lambda
   
   geno_prob_noise = all_genotype_prob_for_empty_poset(lambdas_noise, obs_events, sampling_times, lambda_s, sampling_times_available,log.p=TRUE)
   geno_prob_noise 
