@@ -40,7 +40,7 @@ initialize_lambda <- function ( obs_events, average_sampling_times, poset, verbo
 estimate_mutation_rates <- function(poset, genotypes, sampling_times=NULL, weights = NULL, max_iter=100,  zeta = 0.2, ilambda = NULL,
                           nrOfSamples = 5, verbose = TRUE, maxLambdaValue=10^6, lambda_s=1.0) {
   sampling_times_available = is.null(sampling_times) == FALSE
-  MCEM(poset=poset, obs_events=genotypes, sampling_times=sampling_times, max_iter=max_iter, weights=weights, zeta = zeta, 
+  MCEM(poset=poset, obs_events=genotypes, sampling_times=sampling_times, max_iter=max_iter, weights=weights, zeta = zeta, ilambda = ilambda,
        nrOfSamples = nrOfSamples, verbose = verbose,  maxLambdaValue=maxLambdaValue, lambda_s = lambda_s, sampling_times_available=sampling_times_available)   
 }
 
