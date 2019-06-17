@@ -7,7 +7,9 @@
 
 #include <Rcpp.h>
 #include <RcppEigen.h>
-#include "mcem.h"
+#include "mcem.hpp"
+#include "not_acyclic_exception.hpp"
+#include <boost/graph/graph_traits.hpp>
 #include <random>
 #include <vector>
 
@@ -25,21 +27,17 @@ public:
   }
 } initializer;
 
-// void set_seed(std::mt19937& rng, int seed) {
-//   std::ranlux24_base seeder_rng = std::ranlux24_base(seed);
-//
-//   // adapted from https://stackoverflow.com/a/15509942
-//   std::array<int, std::mt19937::state_size> seed_data;
-//   std::generate_n(seed_data.data(), seed_data.size(), std::ref(seeder_rng));
-//   std::seed_seq seq(std::begin(seed_data), std::end(seed_data));
-//
-//   rng.seed(seq);
-// }
-
-// void seed_rng(std::mt19937& rng, int seed) {
-//   set_seed(rng, seed);
-// }
-
+void handle_exceptions() {
+  try {
+    throw;
+  } catch (const std::exception& ex) {
+    // NOTE: reference to 'exception' is ambiguous, 'std::' required
+    std::string msg = std::string("c++ exception: ") + ex.what();
+    ::Rf_error(msg.c_str());
+  } catch (...) {
+    ::Rf_error("c++ exception (unknown reason)");
+  }
+}
 
 //' @param N number of samples to be drawn
 //' @param lambda rate
@@ -54,6 +52,7 @@ VectorXd rexp_std(const unsigned int N, const double lambda,
   return T;
 }
 
+//' @param N number of samples to be drawn
 std::vector<int> rdiscrete_std(const unsigned int N, const VectorXd weights,
                                std::mt19937& rng) {
   std::discrete_distribution<int> distribution(weights.data(), 
@@ -117,112 +116,130 @@ double complete_log_likelihood(const VectorXd& lambda, const double eps,
 //' Compute observed log-likelihood
 double obs_log_likelihood(
     const MatrixXb& obs, const MatrixXi& poset, const VectorXd& lambda,
-    const VectorXi& topo_path, const double eps, const VectorXd& times,
-    const unsigned int L, const std::string& sampling, const unsigned int version,
+    const double eps, const VectorXd& times, const unsigned int L,
+    const std::string& sampling, const unsigned int version,
     const float perturb_prob, const MatrixXb& genotype_pool,
     const MatrixXd& Tdiff_pool, Context& ctx, const float lambda_s=1.0,
     const bool sampling_times_available=false, const unsigned int thrds=1) {
 
-  const unsigned int p = poset.rows(); // Number of mutations / events
-  const unsigned int N = obs.rows();   // Number of observations / genotypes
+  const auto p = poset.rows(); // Number of mutations / events
+  const auto N = obs.rows();   // Number of observations / genotypes
   double llhood = 0;
   
-  Model model(p, lambda_s);
-  model.fill_poset(poset);
-  model.parents();
+  edge_container edge_list = adjacency_mat2list(poset);
+  Model model(edge_list, p, lambda_s);
   model.set_lambda(lambda);
   model.set_epsilon(eps);
+  model.has_cycles();
+  if (model.cycle) {
+    throw not_acyclic_exception();
+  } else {
+    model.topological_sort();
 
-  #ifdef _OPENMP
+    #ifdef _OPENMP
     omp_set_num_threads(thrds);
-  #endif
-  auto rngs = ctx.get_auxiliary_rngs(thrds);
+    #endif
+    auto rngs = ctx.get_auxiliary_rngs(thrds);
 
-  #pragma omp parallel for reduction(+:llhood) schedule(static)
-  for (unsigned int i = 0; i < N; ++i) {
-    VectorXi dist_pool;
-    if (sampling == "backward")
-      dist_pool = hamming_dist_mat(genotype_pool, obs.row(i));
+    #pragma omp parallel for reduction(+:llhood) schedule(static)
+    for (unsigned int i = 0; i < N; ++i) {
+      VectorXi dist_pool;
+      if (sampling == "backward")
+        dist_pool = hamming_dist_mat(genotype_pool, obs.row(i));
 
-    DataImportanceSampling importance_sampling = importance_weight(
-      obs.row(i), L, model, topo_path, times[i], sampling, version,
-      perturb_prob, dist_pool, Tdiff_pool, rngs[omp_get_thread_num()],
-      sampling_times_available);
-    llhood = llhood + std::log(importance_sampling.w.sum() / L);
+      DataImportanceSampling importance_sampling = importance_weight(
+        obs.row(i), L, model, times[i], sampling, version, perturb_prob,
+        dist_pool, Tdiff_pool, rngs[omp_get_thread_num()],
+        sampling_times_available);
+      llhood = llhood + std::log(importance_sampling.w.sum() / L);
+    }
   }
   return llhood;
 }
 
+//' Generate observations from a given poset and given rates
+//' 
+//' @noRd
+//' @param N number of samples
+//' @return returns matrix containing observations
 MatrixXb sample_genotypes(
-    const unsigned int N, const Model& model, const VectorXi& topo_path,
-    MatrixXd& T_events, VectorXd& T_sampling, Context::rng_type& rng,
+    const unsigned int N, const Model& model, MatrixXd& T_events,
+    VectorXd& T_sampling, Context::rng_type& rng,
     const bool sampling_times_available=false) {
   
   // Initialization and instantiation of variables
-  const unsigned int p = model.size();     // Number of mutations / events
-  MatrixXd T_sum_events(N, p);
+  const vertices_size_type p = model.size();  // Number of mutations / events
+  MatrixXd T_sum_events;
   MatrixXb obs;
-  obs.setZero(N, p);
+  T_sum_events.setZero(N, p);
+  obs.setConstant(N, p, false);
   
   // Generate occurence times T_events_{j} ~ Exp(lambda_{j})
   for (unsigned int j = 0; j < p; ++j)
     T_events.col(j) = rexp_std(N, model.get_lambda(j), rng);
-    // NumericVector aux = rexp(N, lambda[j]);
-    // T_events.col(j) = as<VectorXd>(aux);
   
   // Use sampling times when available
   if (!sampling_times_available)
     T_sampling = rexp_std(N, model.get_lambda_s(), rng);
-    // NumericVector aux = rexp(N, model.get_lambda_s());
-    // T_sampling = as<VectorXd>(aux);
-  
-  // Rcout << T_sampling << std::endl; // DBG T_sampling
-  
-  for (unsigned int k = 0; k < p; ++k) {
-    int j = topo_path(k);
+
+  // Loop through nodes in topological order
+  for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
+       v != model.topo_path.rend(); ++v) {
     for (unsigned int i = 0; i < N; ++i) {
       double T_max = 0.0;
-      for (int u = 0; u < model.N_pa[j]; ++u)
-        if (T_sum_events(i, model.pa[j][u]) > T_max)
-          T_max = T_sum_events(i, model.pa[j][u]);
-      T_sum_events(i, j) = T_events(i, j) + T_max;
-      if (T_sum_events(i, j) <= T_sampling(i))
-        obs(i, j) = 1; 
+      // Loop through parents of node v
+      boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
+      for (boost::tie(in_begin, in_end) = boost::in_edges(*v, model.poset);
+           in_begin != in_end; ++in_begin)
+        if (T_sum_events(i, source(*in_begin, model.poset)) > T_max)
+          T_max = T_sum_events(i, source(*in_begin, model.poset));
+      T_sum_events(i, *v) = T_events(i, *v) + T_max;
+      if (T_sum_events(i, *v) <= T_sampling(i))
+        obs(i, *v) = true;
     }
   }
-  
   return obs;
 }
 
+//' Compute Hamming distance between two vectors
+//' 
+//' @noRd
+//' @return returns Hamming distance
 int hamming_dist(const VectorXi& x, const VectorXi& y) {
   return (x - y).array().abs().sum();
 }
 
+//' Compute Hamming distance between a matrix and a vector row-wise
+//'
+//' @noRd
+//' @return returns a vector containing the Hamming distance
 VectorXi hamming_dist_mat(const MatrixXb& x, const RowVectorXb& y) {
   const int N = x.rows();
   return (x.array() != y.replicate(N, 1).array()).rowwise().count().cast<int>();
   // return (x.rowwise() - y).array().abs().rowwise().sum();
 }
 
-//' Compute importance weights and sufficient statistics by sampling
+//' Compute importance weights and (expected) sufficient statistics by
+//' importance sampling
 //'
 //' @noRd
-//' @param genotype
+//' @param genotype a p-dimesional vector corresponding to an observed 
+//' genotype - e.g., mutated (1) and non-mutated (0) genes
 //' @param L number of samples
 //' @param model
-//' @param topo_path
-//' @param time
+//' @param time sampling time
+//' @param sampling variable indicating which proposal to use
 //' @param K number of samples for weighted sampling
-//' @return  returns importance weights and sufficient statistics
+//' @return returns importance weights and (expected) sufficient statistics
 DataImportanceSampling importance_weight(
     const RowVectorXb& genotype, const unsigned int L, const Model& model,
-    const VectorXi& topo_path, const double time, const std::string& sampling,
-    const unsigned int version, const float perturb_prob,
-    const VectorXi& dist_pool, const MatrixXd& Tdiff_pool,
-    Context::rng_type& rng, const bool sampling_times_available=false) {
+    const double time, const std::string& sampling, const unsigned int version,
+    const float perturb_prob, const VectorXi& dist_pool,
+    const MatrixXd& Tdiff_pool, Context::rng_type& rng,
+    const bool sampling_times_available=false) {
   
   // Initialization and instantiation of variables
-  const unsigned int p = model.size(); // Number of mutations / events
+  const vertices_size_type p = model.size(); // Number of mutations / events
   MatrixXb samples(L, p);
   DataImportanceSampling importance_sampling(L, p);
   
@@ -235,9 +252,8 @@ DataImportanceSampling importance_weight(
     if (sampling_times_available)
       T_sampling.setConstant(time);
 
-    samples = sample_genotypes(
-      L, model, topo_path, importance_sampling.Tdiff, T_sampling, rng,
-      sampling_times_available);
+    samples = sample_genotypes(L, model, importance_sampling.Tdiff, T_sampling,
+                               rng, sampling_times_available);
     importance_sampling.dist = hamming_dist_mat(samples, genotype);
     VectorXd d = importance_sampling.dist.cast<double>();
     importance_sampling.w = pow(model.get_epsilon(), d.array()) *
@@ -283,27 +299,22 @@ DataImportanceSampling importance_weight(
 //' @noRd
 double MCEM_hcbn(
     Model& model, const MatrixXb& obs, const VectorXd& times,
-    const VectorXi& topo_path, const RowVectorXd& weights,
-    const unsigned int L, const std::string& sampling,
-    const unsigned int version, const float perturb_prob,
-    const unsigned int max_iter, const float burn_in, const float max_lambda,
+    const RowVectorXd& weights, const unsigned int L,
+    const std::string& sampling, const unsigned int version,
+    const float perturb_prob, const ControlEM& control_EM,
     const bool sampling_times_available, const unsigned int thrds,
     Context& ctx) {
   
   // Initialization and instantiation of variables
-  const unsigned int p = obs.cols();  // Number of mutations / events
-  const unsigned int N = obs.rows();  // Number of observations / genotypes
-  float W = weights.sum();            // Number of (weighted) observations
+  const vertices_size_type p = model.size(); // Number of mutations / events
+  const unsigned int N = obs.rows();         // Number of observations / genotypes
+  float W = weights.sum();                   // Number of (weighted) observations
   unsigned int K = 0;
   VectorXd avg_lambda = VectorXd::Zero(p);
   double avg_eps = 0, avg_llhood = 0, llhood = 0;
   VectorXd expected_dist(N);
   MatrixXd expected_Tdiff(N, p);
   VectorXd Tdiff_colsum(p);
-  
-  // Model model(p);
-  // model.fill_poset(poset);
-  // model.parents();
   
   // MatrixXb genotype_pool;
   // MatrixXd Tdiff_pool;
@@ -320,13 +331,18 @@ double MCEM_hcbn(
     std::cout << "Size of the genotype pool: " << K << std::endl;
   }
 
-  if (ctx.get_verbose())
-    std::cout << "Initial value for rate parameters - lambda: "
+  if (ctx.get_verbose()) {
+    std::cout << "Initial value of the error rate - epsilon: "
+              << model.get_epsilon() << std::endl;
+    std::cout << "Initial value of the rate parameters - lambda: "
               << model.get_lambda().transpose() << std::endl;
+  }
+
   
-  const unsigned int record_iter = std::max(int(burn_in * max_iter), 1); 
+  const unsigned int record_iter =
+    std::max(int(control_EM.burn_in * control_EM.max_iter), 1);
   
-  for (unsigned int iter = 0; iter < max_iter; ++iter) {
+  for (unsigned int iter = 0; iter < control_EM.max_iter; ++iter) {
     
     /* E step
      * Conditional expectation for the sufficient statistics per observation
@@ -349,10 +365,7 @@ double MCEM_hcbn(
       omp_set_num_threads(thrds);
     #endif
     auto rngs = ctx.get_auxiliary_rngs(thrds);
-    // std::vector<std::mt19937> rngs(thrds);
-    // for (unsigned int t = 0; t < thrds; ++t)
-    //   set_seed(rngs[t], ctx.rng());
-      // set_seed(rngs[t], main_rng());
+
     #pragma omp parallel for schedule(static)
     for (unsigned int i = 0; i < N; ++i) {
       VectorXi d_pool;
@@ -370,13 +383,13 @@ double MCEM_hcbn(
           // T_sampling = as<MapVecd>(aux);
         }
         MatrixXb genotype_pool = sample_genotypes(
-          K, model, topo_path, Tdiff_pool, T_sampling,
-          rngs[omp_get_thread_num()], sampling_times_available);
+          K, model, Tdiff_pool, T_sampling, rngs[omp_get_thread_num()],
+          sampling_times_available);
         d_pool = hamming_dist_mat(genotype_pool, obs.row(i));
       }
       DataImportanceSampling importance_sampling = importance_weight(
-        obs.row(i), L, model, topo_path, times(i), sampling, version,
-        perturb_prob, d_pool, Tdiff_pool, rngs[omp_get_thread_num()],
+        obs.row(i), L, model, times(i), sampling, version, perturb_prob,
+        d_pool, Tdiff_pool, rngs[omp_get_thread_num()],
         sampling_times_available);
 
       expected_dist(i) =
@@ -390,7 +403,7 @@ double MCEM_hcbn(
     // M-step
     model.set_epsilon(expected_dist.sum() / (N * p));
     Tdiff_colsum = weights * expected_Tdiff;
-    model.set_lambda((Tdiff_colsum / W).array().inverse(), max_lambda);
+    model.set_lambda((Tdiff_colsum / W).array().inverse(), control_EM.max_lambda);
     
     llhood = complete_log_likelihood(
       model.get_lambda(), model.get_epsilon(), expected_Tdiff, expected_dist,
@@ -409,9 +422,9 @@ double MCEM_hcbn(
     }
   }
   
-  avg_lambda /= (max_iter - record_iter);
-  avg_eps /= (max_iter - record_iter);
-  avg_llhood /= (max_iter - record_iter);
+  avg_lambda /= (control_EM.max_iter - record_iter);
+  avg_eps /= (control_EM.max_iter - record_iter);
+  avg_llhood /= (control_EM.max_iter - record_iter);
   
   model.set_lambda(avg_lambda);
   model.set_epsilon(avg_eps);
@@ -423,40 +436,43 @@ double MCEM_hcbn(
 RcppExport SEXP _complete_log_likelihood(
     SEXP lambdaSEXP, SEXP epsSEXP, SEXP TdiffSEXP, SEXP distSEXP, SEXP WSEXP) {
   
-  // Convert input to C++ types
-  const MapVecd lambda(as<MapVecd>(lambdaSEXP));
-  double eps = as<double>(epsSEXP);
-  const MapMatd Tdiff(as<MapMatd>(TdiffSEXP));
-  const MapVecd dist(as<MapVecd>(distSEXP));
-  float W = as<float>(WSEXP);
+  try {
+    // Convert input to C++ types
+    const MapVecd lambda(as<MapVecd>(lambdaSEXP));
+    double eps = as<double>(epsSEXP);
+    const MapMatd Tdiff(as<MapMatd>(TdiffSEXP));
+    const MapVecd dist(as<MapVecd>(distSEXP));
+    float W = as<float>(WSEXP);
 
-  // Call the underlying C++ function
-  double res = complete_log_likelihood(lambda, eps, Tdiff, dist, W);
+    // Call the underlying C++ function
+    double res = complete_log_likelihood(lambda, eps, Tdiff, dist, W);
 
-  // Return the result as a SEXP
-  return wrap( res );
+    // Return the result as a SEXP
+    return wrap( res );
+  } catch  (...) {
+    handle_exceptions();
+  }
+  return R_NilValue;
 }
 
 RcppExport SEXP _obs_log_likelihood(
-    SEXP obsSEXP, SEXP posetSEXP, SEXP lambdaSEXP, SEXP topo_pathSEXP,
-    SEXP epsSEXP, SEXP timesSEXP, SEXP LSEXP, SEXP samplingSEXP, SEXP versionSEXP,
-    SEXP perturb_probSEXP, SEXP genotype_poolSEXP, //SEXP dist_poolSEXP,
-    SEXP Tdiff_poolSEXP, SEXP lambda_sSEXP,  SEXP sampling_times_availableSEXP,
-    SEXP thrdsSEXP, SEXP seedSEXP) {
+    SEXP obsSEXP, SEXP posetSEXP, SEXP lambdaSEXP, SEXP epsSEXP,
+    SEXP timesSEXP, SEXP LSEXP, SEXP samplingSEXP, SEXP versionSEXP,
+    SEXP perturb_probSEXP, SEXP genotype_poolSEXP, SEXP Tdiff_poolSEXP,
+    SEXP lambda_sSEXP,  SEXP sampling_times_availableSEXP, SEXP thrdsSEXP,
+    SEXP seedSEXP) {
   
   try {
     // Convert input to C++ types
     const MatrixXb& obs = as<MatrixXb>(obsSEXP);
     const MapMati poset(as<MapMati>(posetSEXP));
     const MapVecd lambda(as<MapVecd>(lambdaSEXP));
-    const MapVeci topo_path(as<MapVeci>(topo_pathSEXP));
     const double eps = as<double>(epsSEXP);
     const MapVecd times(as<MapVecd>(timesSEXP));
     const unsigned int L = as<unsigned int>(LSEXP);
     const std::string& sampling = as<std::string>(samplingSEXP);
     const unsigned int version = as<unsigned int>(versionSEXP);
     const float perturb_prob = as<float>(perturb_probSEXP);
-    // const MapMati dist_pool(as<MapMati>(dist_poolSEXP));
     const MatrixXb& genotype_pool = as<MatrixXb>(genotype_poolSEXP);
     const MapMatd Tdiff_pool(as<MapMatd>(Tdiff_poolSEXP));
     const float lambda_s = as<float>(lambda_sSEXP);
@@ -465,77 +481,81 @@ RcppExport SEXP _obs_log_likelihood(
     const int seed = as<int>(seedSEXP);
     
     // Call the underlying C++ function
-    // seed_rng(seed);
     Context ctx(seed);
     double llhood = obs_log_likelihood(
-      obs, poset, lambda, topo_path, eps, times, L, sampling, version,
-      perturb_prob, genotype_pool, Tdiff_pool, ctx, lambda_s,
-      sampling_times_available, thrds);
+      obs, poset, lambda, eps, times, L, sampling, version, perturb_prob,
+      genotype_pool, Tdiff_pool, ctx, lambda_s, sampling_times_available,
+      thrds);
     
     // Return the result as a SEXP
     return wrap( llhood );
-  } catch (std::exception &ex) {
-    // NOTE: reference to 'exception' is ambiguous, 'std::' required
-    forward_exception_to_r(ex);
-  } catch (...) {
-    ::Rf_error("C++ exception (unknown reason)");
+  } catch  (...) {
+    handle_exceptions();
   }
   return R_NilValue;
 }
 
 RcppExport SEXP _MCEM_hcbn(
     SEXP ilambdaSEXP, SEXP posetSEXP, SEXP obsSEXP, SEXP timesSEXP, 
-    SEXP lambda_sSEXP, SEXP topo_pathSEXP, SEXP epsSEXP, SEXP weightsSEXP,
-    SEXP LSEXP, SEXP samplingSEXP, SEXP versionSEXP, SEXP perturb_probSEXP,
+    SEXP lambda_sSEXP, SEXP epsSEXP, SEXP weightsSEXP, SEXP LSEXP,
+    SEXP samplingSEXP, SEXP versionSEXP, SEXP perturb_probSEXP,
     SEXP max_iterSEXP, SEXP burn_inSEXP, SEXP max_lambdaSEXP,
     SEXP sampling_times_availableSEXP, SEXP thrdsSEXP, SEXP verboseSEXP,
     SEXP seedSEXP) { 
 
-  // Convert input to C++ types
-  VectorXd ilambda = as<MapVecd>(ilambdaSEXP);
-  const MapMati poset(as<MapMati>(posetSEXP)); 
-  const MatrixXb& obs = as<MatrixXb>(obsSEXP);
-  const MapVecd times(as<MapVecd>(timesSEXP));
-  const float lambda_s = as<float>(lambda_sSEXP);
-  const MapVeci topo_path(as<MapVeci>(topo_pathSEXP));
-  const double eps = as<double>(epsSEXP);
-  const MapRowVecd weights(as<MapRowVecd>(weightsSEXP));
-  const unsigned int L = as<unsigned int>(LSEXP);
-  const std::string& sampling = as<std::string>(samplingSEXP);
-  const unsigned int version = as<unsigned int>(versionSEXP);
-  const float perturb_prob = as<float>(perturb_probSEXP);
-  const unsigned int max_iter = as<unsigned int>(max_iterSEXP);
-  const float burn_in = as<float>(burn_inSEXP);
-  const float max_lambda = as<float>(max_lambdaSEXP);
-  const bool sampling_times_available = as<bool>(sampling_times_availableSEXP);
-  const int thrds = as<int>(thrdsSEXP);
-  const bool verbose = as<bool>(verboseSEXP);
-  const int seed = as<int>(seedSEXP);
-  
-  const unsigned int p = poset.rows();
-  Model M(p, lambda_s);
-  M.fill_poset(poset);
-  M.parents();
-  M.set_lambda(ilambda);
-  M.set_epsilon(eps);
+  try {
+    // Convert input to C++ types
+    VectorXd ilambda = as<MapVecd>(ilambdaSEXP);
+    const MapMati poset(as<MapMati>(posetSEXP));
+    const MatrixXb& obs = as<MatrixXb>(obsSEXP);
+    const MapVecd times(as<MapVecd>(timesSEXP));
+    const float lambda_s = as<float>(lambda_sSEXP);
+    const double eps = as<double>(epsSEXP);
+    const MapRowVecd weights(as<MapRowVecd>(weightsSEXP));
+    const unsigned int L = as<unsigned int>(LSEXP);
+    const std::string& sampling = as<std::string>(samplingSEXP);
+    const unsigned int version = as<unsigned int>(versionSEXP);
+    const float perturb_prob = as<float>(perturb_probSEXP);
+    const unsigned int max_iter = as<unsigned int>(max_iterSEXP);
+    const float burn_in = as<float>(burn_inSEXP);
+    const float max_lambda = as<float>(max_lambdaSEXP);
+    const bool sampling_times_available = as<bool>(sampling_times_availableSEXP);
+    const int thrds = as<int>(thrdsSEXP);
+    const bool verbose = as<bool>(verboseSEXP);
+    const int seed = as<int>(seedSEXP);
 
-  // Call the underlying C++ function
-  Context ctx(seed, verbose);
-  double llhood = MCEM_hcbn(
-    M, obs, times, topo_path, weights, L, sampling, version, perturb_prob,
-    max_iter, burn_in, max_lambda, sampling_times_available, thrds, ctx);
-    
-  // Return the result as a SEXP
-  return List::create(_["lambda"]=M.get_lambda(), _["eps"]=M.get_epsilon(),
-                      _["llhood"]=llhood);
+    const auto p = poset.rows(); // Number of mutations / events
+    edge_container edge_list = adjacency_mat2list(poset);
+    Model M(edge_list, p, lambda_s);
+    M.set_lambda(ilambda);
+    M.set_epsilon(eps);
+    M.has_cycles();
+    if (M.cycle)
+      throw not_acyclic_exception();
+    M.topological_sort();
+
+    ControlEM control_EM(max_iter, burn_in, max_lambda);
+
+    // Call the underlying C++ function
+    Context ctx(seed, verbose);
+    double llhood = MCEM_hcbn(
+      M, obs, times, weights, L, sampling, version, perturb_prob, control_EM,
+      sampling_times_available, thrds, ctx);
+
+    // Return the result as a SEXP
+    return List::create(_["lambda"]=M.get_lambda(), _["eps"]=M.get_epsilon(),
+                        _["llhood"]=llhood);
+  } catch  (...) {
+    handle_exceptions();
+  }
+  return R_NilValue;
 }
 
 RcppExport SEXP _importance_weight(
     SEXP genotypeSEXP, SEXP LSEXP, SEXP posetSEXP, SEXP lambdaSEXP,
-    SEXP topo_pathSEXP, SEXP epsSEXP, SEXP timeSEXP, SEXP samplingSEXP, 
-    SEXP versionSEXP, SEXP perturb_probSEXP, SEXP d_poolSEXP, 
-    SEXP Tdiff_poolSEXP, SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP,
-    SEXP seedSEXP) {
+    SEXP epsSEXP, SEXP timeSEXP, SEXP samplingSEXP, SEXP versionSEXP,
+    SEXP perturb_probSEXP, SEXP d_poolSEXP, SEXP Tdiff_poolSEXP,
+    SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP, SEXP seedSEXP) {
   
   try {
     // Convert input to C++ types
@@ -543,7 +563,6 @@ RcppExport SEXP _importance_weight(
     const unsigned int L = as<unsigned int>(LSEXP);
     const MapMati poset(as<MapMati>(posetSEXP));
     const MapVecd lambda(as<MapVecd>(lambdaSEXP));
-    const MapVeci topo_path(as<MapVeci>(topo_pathSEXP));
     const double eps = as<double>(epsSEXP);
     const double time = as<double>(timeSEXP);
     const std::string& sampling = as<std::string>(samplingSEXP);
@@ -555,60 +574,65 @@ RcppExport SEXP _importance_weight(
     const bool sampling_times_available = as<bool>(sampling_times_availableSEXP);
     const int seed = as<int>(seedSEXP);
 
-    const unsigned int p = poset.rows();
-    Model M(p, lambda_s);
-    M.fill_poset(poset);
-    M.parents();
+    const auto p = poset.rows(); // Number of mutations / events
+    edge_container edge_list = adjacency_mat2list(poset);
+    Model M(edge_list, p, lambda_s);
     M.set_lambda(lambda);
     M.set_epsilon(eps);
-      
+    M.has_cycles();
+    if (M.cycle)
+      throw not_acyclic_exception();
+    M.topological_sort();
+
     // Call the underlying C++ function
     Context ctx(seed);
     DataImportanceSampling w = importance_weight(
-      genotype, L, M, topo_path, time, sampling, version, perturb_prob, d_pool,
+      genotype, L, M, time, sampling, version, perturb_prob, d_pool,
       Tdiff_pool, ctx.rng, sampling_times_available);
 
     // Return the result as a SEXP
     return List::create(_["w"]=w.w, _["dist"]=w.dist, _["Tdiff"]=w.Tdiff);
-  } catch (std::exception &ex) {
-    // NOTE: reference to 'exception' is ambiguous, 'std::' required
-    forward_exception_to_r(ex);
-  } catch (...) {
-    ::Rf_error("C++ exception (unknown reason)");
+  } catch  (...) {
+    handle_exceptions();
   }
   return R_NilValue;
 }
 
 RcppExport SEXP _sample_genotypes(
-    SEXP NSEXP, SEXP posetSEXP, SEXP lambdaSEXP, SEXP topo_pathSEXP,
-    SEXP T_eventsSEXP, SEXP T_samplingSEXP, SEXP lambda_sSEXP, 
-    SEXP sampling_times_availableSEXP, SEXP seedSEXP) {
+    SEXP NSEXP, SEXP posetSEXP, SEXP lambdaSEXP, SEXP T_eventsSEXP,
+    SEXP T_samplingSEXP, SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP,
+    SEXP seedSEXP) {
   
-  // Convert input to C++ types
-  const unsigned int N = as<unsigned int>(NSEXP);
-  const MapMati poset(as<MapMati>(posetSEXP));
-  const MapVecd lambda(as<MapVecd>(lambdaSEXP));
-  const MapVeci topo_path(as<MapVeci>(topo_pathSEXP));
-  MatrixXd T_events = as<MapMatd>(T_eventsSEXP);
-  VectorXd T_sampling = as<MapVecd>(T_samplingSEXP);
-  const float lambda_s = as<float>(lambda_sSEXP);
-  const bool sampling_times_available = as<bool>(sampling_times_availableSEXP);
-  const int seed = as<int>(seedSEXP);
-  
-  const unsigned int p = poset.rows();
-  Model M(p, lambda_s);
-  M.fill_poset(poset);
-  M.parents();
-  M.set_lambda(lambda);
-  
-  // Rcout << "Before function call " << T_sampling.transpose() << std::endl; // DBG T_sampling
-  // Call the underlying C++ function
-  Context ctx(seed);
-  MatrixXb samples = sample_genotypes(
-    N, M, topo_path, T_events, T_sampling, ctx.rng, sampling_times_available);
-  // Rcout << "After function call " << T_sampling.transpose() << std::endl; // DBG T_sampling
-  
-  // Return the result as a SEXP
-  return List::create(_["samples"]=samples, _["Tdiff"]=T_events, 
-                      _["T_sampling"]=T_sampling);
+  try {
+    // Convert input to C++ types
+    const unsigned int N = as<unsigned int>(NSEXP);
+    const MapMati poset(as<MapMati>(posetSEXP));
+    const MapVecd lambda(as<MapVecd>(lambdaSEXP));
+    MatrixXd T_events = as<MapMatd>(T_eventsSEXP);
+    VectorXd T_sampling = as<MapVecd>(T_samplingSEXP);
+    const float lambda_s = as<float>(lambda_sSEXP);
+    const bool sampling_times_available = as<bool>(sampling_times_availableSEXP);
+    const int seed = as<int>(seedSEXP);
+
+    const auto p = poset.rows(); // Number of mutations / events
+    edge_container edge_list = adjacency_mat2list(poset);
+    Model M(edge_list, p, lambda_s);
+    M.set_lambda(lambda);
+    M.has_cycles();
+    if (M.cycle)
+      throw not_acyclic_exception();
+    M.topological_sort();
+
+    // Call the underlying C++ function
+    Context ctx(seed);
+    MatrixXb samples = sample_genotypes(N, M, T_events, T_sampling, ctx.rng,
+                                        sampling_times_available);
+
+    // Return the result as a SEXP
+    return List::create(_["samples"]=samples, _["Tdiff"]=T_events,
+                        _["T_sampling"]=T_sampling);
+  } catch  (...) {
+    handle_exceptions();
+  }
+  return R_NilValue;
 }
