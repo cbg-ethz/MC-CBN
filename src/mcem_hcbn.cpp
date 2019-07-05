@@ -39,6 +39,7 @@ void handle_exceptions() {
   }
 }
 
+//' @noRd
 //' @param N number of samples to be drawn
 //' @param lambda rate
 VectorXd rexp_std(const unsigned int N, const double lambda,
@@ -52,6 +53,7 @@ VectorXd rexp_std(const unsigned int N, const double lambda,
   return T;
 }
 
+//' @noRd
 //' @param N number of samples to be drawn
 std::vector<int> rdiscrete_std(const unsigned int N, const VectorXd weights,
                                std::mt19937& rng) {
@@ -102,10 +104,9 @@ double complete_log_likelihood(const VectorXd& lambda, const double eps,
   llhood = W * lambda.array().log().sum() - (Tdiff * lambda).sum();
   if (eps == 0) {
     for (unsigned int i = 0; i < N; ++i) {
-      if (dist(i) != 0) {
+      if (dist(i) != 0)
         llhood += log(eps + DBL_EPSILON) * dist(i) +
           log(1 - eps - DBL_EPSILON) * (p - dist(i));
-      }
     }
   } else {
     llhood += log(eps) * dist.sum() + log(1 - eps) * (p - dist.array()).sum();
@@ -144,7 +145,7 @@ double obs_log_likelihood(
     #pragma omp parallel for reduction(+:llhood) schedule(static)
     for (unsigned int i = 0; i < N; ++i) {
       VectorXi dist_pool;
-      if (sampling == "backward")
+      if (sampling == "rejection")
         dist_pool = hamming_dist_mat(genotype_pool, obs.row(i));
 
       DataImportanceSampling importance_sampling = importance_weight(
@@ -169,9 +170,9 @@ MatrixXb sample_genotypes(
   
   // Initialization and instantiation of variables
   const vertices_size_type p = model.size();  // Number of mutations / events
-  MatrixXd T_sum_events;
+  MatrixXd T_events_sum;
   MatrixXb obs;
-  T_sum_events.setZero(N, p);
+  T_events_sum.setZero(N, p);
   obs.setConstant(N, p, false);
   
   // Generate occurence times T_events_{j} ~ Exp(lambda_{j})
@@ -191,10 +192,10 @@ MatrixXb sample_genotypes(
       boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
       for (boost::tie(in_begin, in_end) = boost::in_edges(*v, model.poset);
            in_begin != in_end; ++in_begin)
-        if (T_sum_events(i, source(*in_begin, model.poset)) > T_max)
-          T_max = T_sum_events(i, source(*in_begin, model.poset));
-      T_sum_events(i, *v) = T_events(i, *v) + T_max;
-      if (T_sum_events(i, *v) <= T_sampling(i))
+        if (T_events_sum(i, source(*in_begin, model.poset)) > T_max)
+          T_max = T_events_sum(i, source(*in_begin, model.poset));
+      T_events_sum(i, *v) = T_events(i, *v) + T_max;
+      if (T_events_sum(i, *v) <= T_sampling(i))
         obs(i, *v) = true;
     }
   }
@@ -243,7 +244,7 @@ DataImportanceSampling importance_weight(
   MatrixXb samples(L, p);
   DataImportanceSampling importance_sampling(L, p);
   
-  if (sampling == "naive") {
+  if (sampling == "forward") {
     /* Generate L samples from poset with parameters lambda and lambda_s.
      * In particular, epsilon is zero (default value) - because the idea is to
      * generate samples of X (true genotype)
@@ -260,7 +261,7 @@ DataImportanceSampling importance_weight(
       pow(1 - model.get_epsilon(), p - d.array());
   } else if (sampling == "add-remove") {
     //TODO
-  } else if (sampling == "backward") {
+  } else if (sampling == "rejection") {
     const unsigned int K = dist_pool.size();
     VectorXd log_prob_Y_X(L);
     VectorXd log_proposal(L);
@@ -299,26 +300,29 @@ DataImportanceSampling importance_weight(
 //' @noRd
 double MCEM_hcbn(
     Model& model, const MatrixXb& obs, const VectorXd& times,
-    const RowVectorXd& weights, const unsigned int L,
-    const std::string& sampling, const unsigned int version,
-    const float perturb_prob, const ControlEM& control_EM,
-    const bool sampling_times_available, const unsigned int thrds,
-    Context& ctx) {
+    const RowVectorXd& weights, unsigned int L, const std::string& sampling,
+    const unsigned int version, const float perturb_prob,
+    const ControlEM& control_EM, const bool sampling_times_available,
+    const unsigned int thrds, Context& ctx) {
   
   // Initialization and instantiation of variables
   const vertices_size_type p = model.size(); // Number of mutations / events
   const unsigned int N = obs.rows();         // Number of observations / genotypes
   float W = weights.sum();                   // Number of (weighted) observations
   unsigned int K = 0;
+  unsigned int update_step_size = control_EM.update_step_size;
   VectorXd avg_lambda = VectorXd::Zero(p);
+  VectorXd avg_lambda_current = VectorXd::Zero(p);
   double avg_eps = 0, avg_llhood = 0, llhood = 0;
+  double avg_eps_current = 0;
+  bool tol_comparison = true;
   VectorXd expected_dist(N);
   MatrixXd expected_Tdiff(N, p);
   VectorXd Tdiff_colsum(p);
-  
+
   // MatrixXb genotype_pool;
   // MatrixXd Tdiff_pool;
-  if (sampling == "backward") {
+  if (sampling == "rejection") {
     // if (p < 19) {
     //   K = std::max((unsigned int) pow(2, p + 1), 2 * L);
     // } else {
@@ -337,21 +341,40 @@ double MCEM_hcbn(
     std::cout << "Initial value of the rate parameters - lambda: "
               << model.get_lambda().transpose() << std::endl;
   }
-
-  
-  const unsigned int record_iter =
-    std::max(int(control_EM.burn_in * control_EM.max_iter), 1);
   
   for (unsigned int iter = 0; iter < control_EM.max_iter; ++iter) {
-    
+
+    if (iter == update_step_size) {
+      avg_lambda_current /= control_EM.update_step_size;
+      avg_eps_current /= control_EM.update_step_size;
+      avg_llhood /= control_EM.update_step_size;
+      if (tol_comparison) {
+        if (std::abs(avg_eps - avg_eps_current) <= control_EM.tol &&
+            ((avg_lambda - avg_lambda_current).array().abs() <= control_EM.tol).all())
+          break;
+        L *= 2;
+      }
+      avg_lambda = avg_lambda_current;
+      avg_eps = avg_eps_current;
+
+      update_step_size += control_EM.update_step_size;
+      tol_comparison = true;
+
+      /* Restart averaging */
+      avg_lambda_current = VectorXd::Zero(p);
+      avg_eps_current = 0;
+      avg_llhood = 0;
+    }
+
     /* E step
      * Conditional expectation for the sufficient statistics per observation
      * and event
      */
     // NOTE: All threads sharing same pool
-    // if (sampling == "backward") {
+    // if (sampling == "rejection") {
     //   VectorXd T_sampling;
     //   if (sampling_times_available) {
+    //     // Sample with replacement from vector containing sampling times
     //     T_sampling.resize(K);
     //     NumericVector times_aux(wrap(times));
     //     NumericVector aux = sample(times_aux, K, true);
@@ -370,17 +393,12 @@ double MCEM_hcbn(
     for (unsigned int i = 0; i < N; ++i) {
       VectorXi d_pool;
       MatrixXd Tdiff_pool;
-      if (sampling == "backward") {
+      if (sampling == "rejection") {
         Tdiff_pool.resize(K, p);
         VectorXd T_sampling;
         if (sampling_times_available) {
           T_sampling.resize(K);
           T_sampling.setConstant(times(i));
-          // Sample with replacement from vector containing sampling times
-          // TODO
-          // NumericVector times_aux(wrap(times));
-          // NumericVector aux = sample(times_aux, K, true);
-          // T_sampling = as<MapVecd>(aux);
         }
         MatrixXb genotype_pool = sample_genotypes(
           K, model, Tdiff_pool, T_sampling, rngs[omp_get_thread_num()],
@@ -399,8 +417,8 @@ double MCEM_hcbn(
         (importance_sampling.Tdiff.transpose() * importance_sampling.w) /
         importance_sampling.w.sum();
     }
-    
-    // M-step
+
+    /* M-step */
     model.set_epsilon(expected_dist.sum() / (N * p));
     Tdiff_colsum = weights * expected_Tdiff;
     model.set_lambda((Tdiff_colsum / W).array().inverse(), control_EM.max_lambda);
@@ -408,26 +426,29 @@ double MCEM_hcbn(
     llhood = complete_log_likelihood(
       model.get_lambda(), model.get_epsilon(), expected_Tdiff, expected_dist,
       W);
+
+    avg_lambda_current +=  model.get_lambda();
+    avg_eps_current += model.get_epsilon();
+    avg_llhood += llhood;
+
+    if (iter + 1 == control_EM.max_iter) {
+      unsigned int num_iter = control_EM.max_iter - update_step_size +
+        control_EM.update_step_size;
+      avg_lambda_current /= num_iter;
+      avg_eps_current /= num_iter;
+      avg_llhood /= num_iter;
+    }
+
     if (ctx.get_verbose()) {
       if (iter == 0)
         std::cout << "llhood\tepsilon\tlambdas" << std::endl;
       std::cout << llhood << "\t" << model.get_epsilon() << "\t"
                 << model.get_lambda().transpose() << std::endl;
     }
-
-    if (iter >= record_iter) {
-      avg_lambda +=  model.get_lambda();
-      avg_eps += model.get_epsilon();
-      avg_llhood += llhood;
-    }
   }
   
-  avg_lambda /= (control_EM.max_iter - record_iter);
-  avg_eps /= (control_EM.max_iter - record_iter);
-  avg_llhood /= (control_EM.max_iter - record_iter);
-  
-  model.set_lambda(avg_lambda);
-  model.set_epsilon(avg_eps);
+  model.set_lambda(avg_lambda_current);
+  model.set_epsilon(avg_eps_current);
   model.set_llhood(avg_llhood);
   
   return avg_llhood;
@@ -495,13 +516,18 @@ RcppExport SEXP _obs_log_likelihood(
   return R_NilValue;
 }
 
+//' @noRd
+//' @param update_step_sizeSEXP Evaluate convergence of parameter every
+//' 'update_step_size' and increase number of samples, 'L', in order to reach a
+//' desirable 'tol'
+//' @param tolSEXP Convergence tolerance for rate paramenters
 RcppExport SEXP _MCEM_hcbn(
     SEXP ilambdaSEXP, SEXP posetSEXP, SEXP obsSEXP, SEXP timesSEXP, 
     SEXP lambda_sSEXP, SEXP epsSEXP, SEXP weightsSEXP, SEXP LSEXP,
     SEXP samplingSEXP, SEXP versionSEXP, SEXP perturb_probSEXP,
-    SEXP max_iterSEXP, SEXP burn_inSEXP, SEXP max_lambdaSEXP,
-    SEXP sampling_times_availableSEXP, SEXP thrdsSEXP, SEXP verboseSEXP,
-    SEXP seedSEXP) { 
+    SEXP max_iterSEXP, SEXP update_step_sizeSEXP, SEXP tolSEXP,
+    SEXP max_lambdaSEXP, SEXP sampling_times_availableSEXP, SEXP thrdsSEXP,
+    SEXP verboseSEXP, SEXP seedSEXP) {
 
   try {
     // Convert input to C++ types
@@ -512,12 +538,13 @@ RcppExport SEXP _MCEM_hcbn(
     const float lambda_s = as<float>(lambda_sSEXP);
     const double eps = as<double>(epsSEXP);
     const MapRowVecd weights(as<MapRowVecd>(weightsSEXP));
-    const unsigned int L = as<unsigned int>(LSEXP);
+    unsigned int L = as<unsigned int>(LSEXP);
     const std::string& sampling = as<std::string>(samplingSEXP);
     const unsigned int version = as<unsigned int>(versionSEXP);
     const float perturb_prob = as<float>(perturb_probSEXP);
     const unsigned int max_iter = as<unsigned int>(max_iterSEXP);
-    const float burn_in = as<float>(burn_inSEXP);
+    const unsigned int update_step_size = as<unsigned int>(update_step_sizeSEXP);
+    const double tol = as<double>(tolSEXP);
     const float max_lambda = as<float>(max_lambdaSEXP);
     const bool sampling_times_available = as<bool>(sampling_times_availableSEXP);
     const int thrds = as<int>(thrdsSEXP);
@@ -534,7 +561,7 @@ RcppExport SEXP _MCEM_hcbn(
       throw not_acyclic_exception();
     M.topological_sort();
 
-    ControlEM control_EM(max_iter, burn_in, max_lambda);
+    ControlEM control_EM(max_iter, update_step_size, tol, max_lambda);
 
     // Call the underlying C++ function
     Context ctx(seed, verbose);
