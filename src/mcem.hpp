@@ -167,15 +167,18 @@ public:
 
 };
 
+/* Class containing customisable options for the EM algorithm */
 class ControlEM {
 public:
   unsigned int max_iter;
-  float burn_in;
+  unsigned int update_step_size; // increase L every 'update_step_size' to reach a desirable 'tol'
+  double tol;                    // convergence tolerance
   float max_lambda;
 
-  ControlEM(unsigned int max_iter=100, float burn_in=0.8, float max_lambda=1e6) :
-    max_iter(max_iter), burn_in(burn_in), max_lambda(max_lambda) {}
-
+  ControlEM(unsigned int max_iter=100, unsigned int update_step_size=20,
+            double tol=0.001, float max_lambda=1e6) :
+    max_iter(max_iter), update_step_size(update_step_size), tol(tol),
+    max_lambda(max_lambda) {}
 };
 
 DataImportanceSampling importance_weight(
