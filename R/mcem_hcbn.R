@@ -8,41 +8,49 @@
 #' @param poset a matrix containing the cover relations
 #' @param obs a matrix containing observations or genotypes, where each row
 #' corresponds to a genotype vector whose entries indicate whether an event has
-#' been observed (1) or not (0)
-#' @param lambda.s rate of the sampling process. Defaults to `1.0`
+#' been observed (\code{1}) or not (\code{0})
+#' @param lambda.s rate of the sampling process. Defaults to \code{1.0}
 #' @param L number of samples to be drawn from the proposal in the E-step
 #' @param eps an optional initial value of the error rate parameter
-#' @param sampling sampling scheme. OPTIONS: 'naive' - generate occurrence
-#' times according to current rate parameters, and, from them, generate the
-#' genotypes; 'add-remove' - generate genotypes from observed genotypes using a
-#' two-steps proposal. First, make genotypes compatible with the poset by
-#' either adding or removing mutations. Second, perturb this version by adding
-#' or removing a mutation while yielding a compatible observation; 'backward' -
-#' generate a pool of compatible genotypes according to current rate parameters
-#' and sample K observations proportional to the Hamming distance
+#' @param sampling sampling scheme. OPTIONS: \code{"forward"} - generate
+#' occurrence times according to current rate parameters, and, from them,
+#' generate the genotypes; \code{"add-remove"} - generate genotypes from
+#' observed genotypes using a two-steps proposal. First, make genotypes
+#' compatible with the poset by either adding or removing mutations. Second,
+#' perturb this version by adding or removing a mutation while yielding a
+#' compatible observation; \code{"rejection"} - generate a pool of compatible
+#' genotypes according to current rate parameters and sample \code{K}
+#' observations proportional to the Hamming distance
 #' @param times an optional vector containing times at which genotypes were
 #' observed
 #' @param weights an optional vector containing observation weights
 #' @param version an optional argument indicating which version of the
-#' `add-remove` sampling scheme to use. Defaults to `3`
+#' \code{"add-remove"} sampling scheme to use. Defaults to \code{3}
 #' @param perturb.prob probability of perturbing a genotype. Genotypes are
-#' perturbed in order to learn the error rate, \code{epsilon}. A genotype is
+#' perturbed in order to learn the error rate, \eqn{\epsilon}. A genotype is
 #' perturbed, if after drawing a random number, this is smaller than
-#' `perturb.prob`, otherwise `X_start = X`. This option is used if `sampling`
-#' is set to `add-remove`. Defaults to `0.3`
-#' @param max.iter the maximum number of EM iterations. Defaults to 100
+#' \code{perturb.prob}, otherwise \eqn{X_start = X}. This option is used if
+#' \code{sampling} is set to \code{"add-remove"}. Defaults to \code{0.3}
+#' @param max.iter the maximum number of EM iterations. Defaults to \code{100}
 #' iterations
+#' @param update.step.size number of EM steps after which the number of
+#' samples, \code{L}, is doubled. \code{L} is increased, if the difference in
+#' the parameter estimates between such consecutive batches is greater than the
+#' tolerance level, \code{tol}
+#' @param tol convergence tolerance for the error rate and the rate parameters.
+#' The EM runs until the difference between the average estimates in the last
+#' two batches is smaller than tol, or until \code{max.iter} is reached.
 #' @param max.lambda an optional upper bound on the value of the rate
-#' parameters. Defaults to `1e6`
+#' parameters. Defaults to \code{1e6}
 #' @param thrds number of threads for parallel execution
 #' @param verbose an optional argument indicating whether to output logging
 #' information
 #' @param seed seed for reproducibility
 MCEM.hcbn <- function(
   lambda, poset, obs, lambda.s=1.0, L, eps=NULL,
-  sampling=c('naive', 'add-remove', 'backward'), times=NULL, weights=NULL,
-  version=3L, perturb.prob=0.3, max.iter=100L, burn.in=0.8, max.lambda=1e6,
-  thrds=1L, verbose=FALSE, seed=NULL) {
+  sampling=c('forward', 'add-remove', 'rejection'), times=NULL, weights=NULL,
+  version=3L, perturb.prob=0.3, max.iter=100L, update.step.size=20L, tol=0.001,
+  max.lambda=1e6, thrds=1L, verbose=FALSE, seed=NULL) {
   
   sampling <- match.arg(sampling)
   N <- nrow(obs)
@@ -61,6 +69,9 @@ MCEM.hcbn <- function(
   if (is.null(weights))
     weights <- rep(1, N)
   
+  if (update.step.size > max.iter)
+    update.step.size <- as.integer(max.iter / 5)
+
   if (is.null(seed))
     seed <- sample.int(3e4, 1)
   
@@ -69,9 +80,9 @@ MCEM.hcbn <- function(
     eps <- runif(1, 0.01, 0.3)
   }
   .Call('_MCEM_hcbn', PACKAGE = 'mccbn', lambda, poset, obs, times,
-        lambda.s, eps, weights, L, sampling, version, perturb.prob, max.iter,
-        burn.in,  max.lambda, sampling.times.available, as.integer(thrds),
-        verbose, as.integer(seed))
+        lambda.s, eps, weights, as.integer(L), sampling, version, perturb.prob,
+        as.integer(max.iter), as.integer(update.step.size), tol, max.lambda,
+        sampling.times.available, as.integer(thrds), verbose, as.integer(seed))
 }
 
 #' @title Importance sampling
@@ -81,33 +92,35 @@ MCEM.hcbn <- function(
 #' importance sampling
 #' 
 #' @param genotype a binary vector indicating whether an event has been
-#' observed (`1`) or not (`0`)
+#' observed (\code{1}) or not (\code{0})
 #' @param L number of samples to be drawn from the proposal
 #' @param poset a matrix containing the cover relations
 #' @param lambda a vector of the rate parameters
 #' @param eps error rate
 #' @param time optional argument specifying the sampling time
-#' @param sampling sampling scheme. OPTIONS: 'naive' - generate occurrence
-#' times according to current rate parameters, and, from them, generate the
-#' genotypes; 'add-remove' - generate genotypes from observed genotypes using a
-#' two-steps proposal. First, make genotypes compatible with the poset by
-#' either adding or removing mutations. Second, perturb this version by adding
-#' or removing a mutation while yielding a compatible observation; 'backward' -
-#' generate a pool of compatible genotypes according to current rate parameters
-#' and sample K observations proportional to the Hamming distance
-#' @param version an integer indicating which version of the `add-remove`
-#' sampling scheme to use.
+#' @param sampling sampling scheme. OPTIONS: \code{"forward"} - generate
+#' occurrence times according to current rate parameters, and, from them,
+#' generate the genotypes; \code{"add-remove"} - generate genotypes from
+#' observed genotypes using a two-steps proposal. First, make genotypes
+#' compatible with the poset by either adding or removing mutations. Second,
+#' perturb this version by adding or removing a mutation while yielding a
+#' compatible observation; \code{"rejection"} - generate a pool of compatible
+#' genotypes according to current rate parameters and sample \code{K}
+#' observations proportional to the Hamming distance
+#' @param version an integer indicating which version of the
+#' \code{"add-remove"} sampling scheme to use.
 #' @param perturb.prob probability of perturbing a genotype
-#' @param dist.pool Hamming distance between `genotype` and the genotype pool.
-#' This option is used if `sampling` is set to `add-remove`
+#' @param dist.pool Hamming distance between \code{genotype} and the genotype
+#' pool. This option is used if \code{sampling} is set to \code{"rejection"}
 #' @param Tdiff.pool Expected time differences for the genotype pool. This
-#' option is used if `sampling` is set to `add-remove`
-#' @param lambda.s rate of the sampling process. Defaults to `1.0`
+#' option is used if \code{sampling} is set to \code{"rejection"}
+#' @param lambda.s rate of the sampling process. Defaults to \code{1.0}
 #' @param seed seed for reproducibility
 importance.weight <- function(
   genotype, L, poset, lambda, eps, time=NULL,
-  sampling=c('naive', 'add-remove', 'backward'), version, perturb.prob,
-  dist.pool=integer(0), Tdiff.pool=matrix(0), lambda.s=1.0, seed=NULL) {
+  sampling=c('forward', 'add-remove', 'rejection'), version=NULL,
+  perturb.prob=NULL, dist.pool=integer(0), Tdiff.pool=matrix(0), lambda.s=1.0,
+  seed=NULL) {
   
   sampling <- match.arg(sampling)
   if (!is.integer(genotype))
@@ -115,16 +128,21 @@ importance.weight <- function(
   
   if (!is.integer(poset))
     poset <- matrix(as.integer(poset), nrow=nrow(poset), ncol=ncol(poset))
-  
-  if (!is.integer(version))
-    version <- as.integer(version)
-  
+
   if (is.null(time)) {
     time <- 0
     sampling.times.available <- FALSE
   } else {
     sampling.times.available <- TRUE
   }
+  if (is.null(version))
+    version <- 0
+  else (!is.integer(version))
+    version <- as.integer(version)
+
+  if (is.null(perturb.prob))
+    perturb.prob <- 0.0
+
   if (!is.integer(dist.pool))
     dist.pool <- as.integer(dist.pool)
   
@@ -146,11 +164,15 @@ importance.weight <- function(
 #' hidden log-likelihood
 #' 
 #' @param lambda a vector of the rate parameters
-#' @param eps error rate
+#' @param eps error rate, \eqn{\epsilon}
 #' @param Tdiff a matrix of expected time differences
 #' @param dist a vector of expected Hamming distances
-#' @param W a vector containing observation weights
-complete.loglikelihood <- function(lambda, eps, Tdiff, dist, W) {
+#' @param W sum of weighted observations
+complete.loglikelihood <- function(lambda, eps, Tdiff, dist, W=NULL) {
+
+  if (is.null(W))
+    W <- length(Tdiff)
+
   .Call('_complete_log_likelihood', PACKAGE = 'mccbn', lambda, eps, Tdiff, dist,
         W)
 }
