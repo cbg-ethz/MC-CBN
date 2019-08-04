@@ -1,7 +1,7 @@
 /** mccbn: large-scale inference on conjunctive Bayesian networks
- * 
+ *
  *  This file is part of the mccbn package
- * 
+ *
  * @author Susana Posada Céspedes
  * @email susana.posada@bsse.ethz.ch
  */
@@ -184,9 +184,8 @@ public:
 DataImportanceSampling importance_weight(
     const RowVectorXb& genotype, const unsigned int L, const Model& model,
     const double time, const std::string& sampling, const unsigned int version,
-    const float perturb_prob, const VectorXi& dist_pool,
-    const MatrixXd& Tdiff_pool, Context::rng_type& rng,
-    const bool sampling_times_available);
+    const VectorXi& dist_pool, const MatrixXd& Tdiff_pool,
+    Context::rng_type& rng, const bool sampling_times_available);
 
 VectorXi hamming_dist_mat(const MatrixXb &x, const RowVectorXb &y);
 
@@ -198,9 +197,8 @@ double MCEM_hcbn(
     Model& model, const MatrixXb& obs, const VectorXd& times,
     const RowVectorXd& weights, const unsigned int L,
     const std::string& sampling, const unsigned int version,
-    const float perturb_prob, const ControlEM& control_EM,
-    const bool sampling_times_available, const unsigned int thrds,
-    Context& ctx);
+    const ControlEM& control_EM, const bool sampling_times_available,
+    const unsigned int thrds, Context& ctx);
 
 edge_container adjacency_mat2list(const MatrixXi& poset);
 
