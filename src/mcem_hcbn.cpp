@@ -268,6 +268,11 @@ DataImportanceSampling importance_weight(
     VectorXd d_pool = dist_pool.cast<double>();
     VectorXd q_prob = pow(model.get_epsilon(), d_pool.array()) *
       pow(1 - model.get_epsilon(), p - d_pool.array());
+    /* In the unlikely event that q_prob is 0 for all samples, default to
+     * random sampling
+     */
+    if (q_prob.sum() == 0)
+        q_prob.setConstant(1);
     q_prob /= q_prob.sum();
 
     // Draw L samples with replacement and with weights q_prob
