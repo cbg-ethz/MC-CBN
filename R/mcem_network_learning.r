@@ -43,6 +43,8 @@ learn_network_boot <- function(B, obs_events, sampling_times=NULL, weights=NULL,
   list(poset= est_poset/B, poset_trans = est_poset_trans/B)
 }
 
+#' @export
+#' @noRd
 learn_network <- function(obs_events, sampling_times = NULL, weights=NULL, max_iter=100, zeta = 0.2, L=5,
                           nrOfSamplesForLL = 100, noise_model="empty", verbose=FALSE, 
                           min_compatible_geno_fraction=0.5, maxLambdaValue=10^6, lambda_s=1.0, 

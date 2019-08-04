@@ -18,7 +18,7 @@ weibull_loglike <- function(x, E, T ) {
 #' fit_weibull
 #' B * N/4 is the maximum allwed threshold in the last iteration. The error threshold in iteration "iter" is defined
 #' as max( 0.2, B * (N/4) * iter/max_iteration). The B * N/4 still gives a OK result. B * (N/4) is an approximation for
-#' B * fa * fb/ (fa+fb) where fa and fb are the frequncy of events a and b. The derivation of this formula is straightforward. 
+#' B * fa * fb/ (fa+fb) where fa and fb are the frequncy of events a and b. The derivation of this formula is straightforward.
 #' 0.1 is a reasonable value for this parameter.
 #' @export
 fit_weibull <- function(E, T, org_init_par=NULL, B=0.1, verbose=F) {
