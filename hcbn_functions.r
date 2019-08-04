@@ -40,16 +40,16 @@ write.poset <- function(poset, filename, datadir) {
 
   p <- nrow(poset)
   outfile <- file.path(datadir, paste(filename, ".poset", sep=""))
-  #  write header 
+  #  write header
   write(p, outfile)
-  
+
   relations <- which(poset == 1)
   i <- relations %% p
   j <- (relations %/% p) + 1
   write.table(cbind(i, j), outfile,row.names=FALSE, col.names=FALSE,
               append=TRUE)
-  
-  #  write footer 
+
+  #  write footer
   write(0, outfile, append=TRUE)
 }
 
@@ -96,9 +96,9 @@ complete.loglikelihood_ <- function(lambdas, eps, Tdiff, dist) {
 #' @param seed seed for reproducibility
 obs.loglikelihood_ <- function(
   obs.events, poset, lambdas, lambda.s, eps, sampling.times=NULL, L=1000,
-  sampling=c('naive', 'add-remove', 'backward'), perturb.prob=0.8,
+  sampling=c('forward', 'add-remove', 'rejection'), perturb.prob=0.8,
   version="3", genotype.pool=NULL, exact=FALSE, seed=NULL) {
-  
+
   sampling <- match.arg(sampling)
   if (is.null(seed))
     seed <- sample.int(1e9, 1)
@@ -122,7 +122,7 @@ obs.loglikelihood_ <- function(
     # }
   } else {
     prob_Y <- foreach(i=1:N, .combine='c', .packages="mccbn") %dopar% {
-      if (sampling == "backward") {
+      if (sampling == "rejection") {
         d_pool <-
           apply(genotype.pool$samples, 1, hamming.dist, y=obs.events[i, ])
         Tdiff_pool <- genotype.pool$Tdiff
@@ -141,7 +141,7 @@ obs.loglikelihood_ <- function(
 
     llhood <- sum(log(prob_Y))
   }
-  
+
   return(llhood)
 }
 
@@ -160,7 +160,7 @@ probY.empirical <- function(N, poset, lambdas, lambda.s, genotype, eps) {
   simGenotypes <-
     sample_genotypes(N, poset, sampling_param=lambda.s, lambdas=lambdas,
                      eps=eps)
-  return(sum(apply(simGenotypes$obs_events, 1, 
+  return(sum(apply(simGenotypes$obs_events, 1,
                    function(x, y) all(x == y), y=genotype)) / N)
 }
 
@@ -174,13 +174,13 @@ tdiff.empirical <- function(N, poset, lambdas, lambda.s, genotype, eps) {
                      eps=eps)
   idx <- which(apply(simGenotypes$obs_events, 1, function(x, y) all(x == y),
                     y=genotype))
-  
+
   return(apply(simGenotypes$T_events[idx, ], 2, mean))
 }
 
 #' @description compute the average distance between genotype Y (subject to
 #' noise) and N possible true genotypes, X
-#' 
+#'
 #' @inheritParams probY.empirical
 dist.empirical <- function(N, poset, lambdas, lambda.s, genotype, eps) {
 
@@ -232,10 +232,10 @@ get.children <- function(poset) {
 #' @param children list of children per event. It should have been computed on
 #' the transitively closed poset
 add.relations <- function(genotype, children) {
-  
+
   p <- length(genotype)
-  return(sapply(1:p, 
-                function(i, obs, c) 
+  return(sapply(1:p,
+                function(i, obs, c)
                   ifelse(obs[i] == 0, ifelse(any(obs[c[[i]]] == 1), 1, obs[i]),
                          obs[i]), obs=genotype, c=children))
 }
@@ -248,11 +248,11 @@ add.relations <- function(genotype, children) {
 #' @param parents list of parents per node. It should have been computed on the
 #' transitively closed poset
 remove.relations <- function(genotype, parents) {
-  
+
   p = length(genotype)
-  return(sapply(1:p, 
-                function(i, obs, p) 
-                  ifelse(obs[i] == 1, 
+  return(sapply(1:p,
+                function(i, obs, p)
+                  ifelse(obs[i] == 1,
                          ifelse(any(obs[p[[i]]] == 0), 0, obs[i]), obs[i]),
                 obs=genotype, p=parents))
 }
@@ -285,7 +285,7 @@ get.possible.moves <- function(genotype, parents, children) {
                               x=genotype, c=children)]
     set.size.remove <- length(idxs.remove)
   }
-  
+
   return(list("set.size"= c("add"=set.size.add, "remove"=set.size.remove),
               "idxs.add"=idxs.add, "idxs.remove"=idxs.remove))
 }
@@ -315,17 +315,17 @@ get.possible.moves <- function(genotype, parents, children) {
 #' not perturbed
 perturb <- function(events, parents, children, perturb.prob=0.8,
                     compatible=FALSE, version=c("1", "2", "3")) {
-  
+
   version <- match.arg(version)
-  
+
   L <- nrow(events)  # number of samples
   p <- ncol(events)  # number of events/mutations
   new.obs <- events
   option.set.size <- rep(NA, L)
-  
+
   perturb <- ifelse(runif(L, 0, 1) < perturb.prob, 1, 0)
   idxs.perturb <- which(perturb == 1)
-  
+
   # When observation Y was already compatible, all rows are equivalent
   if (compatible || var(as.vector(events)) == 0) {
     # Get indices of mutations that can be either added or removed
@@ -428,9 +428,9 @@ draw.samples <- function(genotype, L, parents, children, compatible, eps,
                          perturb.prob=0.8, version=c("1", "2", "3")) {
 
   version <- match.arg(version)
-  
+
   p <- length(genotype)  # number of events/mutations
-  
+
   if (compatible) {
     # if genotype is compatible with poset, we can inmediately go to step 2:
     # perturb
@@ -441,7 +441,7 @@ draw.samples <- function(genotype, L, parents, children, compatible, eps,
     # versions by adding or removing observations
     compatible.by.adding <- add.relations(genotype, children)
     compatible.by.removing <- remove.relations(genotype, parents)
-    
+
     if (version == "1" | version == "2") {
       # Both moves, add and remove, have equal probability
       # Move add (remove) wouldn't be applicable if genotype is the resistant
@@ -459,7 +459,7 @@ draw.samples <- function(genotype, L, parents, children, compatible, eps,
       make.compatible.prob <- ifelse(add == 1, add.prob, 1 - add.prob)
     }
     compatible.obs <- matrix(0, L, p)
-    
+
     if (all(add == 1)) {
       compatible.obs <- matrix(compatible.by.adding, nrow=L, ncol=p, byrow=TRUE)
     } else if (all(add == 0)) {
@@ -497,7 +497,7 @@ rtexp <- function(x, rate) {
 #' @param sampling.time optional argument specifying the sampling time
 sample.mutation.times <- function(genotype, poset, lambdas, lambda.s=1.0,
                                   sampling.time=NULL) {
-  
+
   p <- length(genotype)  # number of events/mutations
   parents <- get.parents(poset)
   if (is.null(sampling.time))
@@ -507,7 +507,7 @@ sample.mutation.times <- function(genotype, poset, lambdas, lambda.s=1.0,
   Tsum <- numeric(p)
   dens <- 0
   topo.path <- my.topological.sort(poset)
-  
+
   for (j in topo.path) {
     max.time.parents <- 0
     if (length(parents[[j]]) > 0) {
@@ -516,7 +516,7 @@ sample.mutation.times <- function(genotype, poset, lambdas, lambda.s=1.0,
           max.time.parents <- Tsum[parents[[j]][u]]
       }
     }
-    
+
     if (genotype[j] == 1) {
       # If mutation is observed,
       # Z ~ TExp(lambda, 0, sampling.time - max.time.parents)
@@ -556,8 +556,8 @@ log.cbn.density <- function(Tdiff, rate) {
 #' @param lambda.s rate of the sampling process
 #' @param eps error rate
 #' @param sampling.time an optional argument specifying the sampling time
-#' @param sampling type of sampling scheme. OPTIONS: \code{"naive"},
-#' \code{"add-remove"} or \code{"backward"}
+#' @param sampling type of sampling scheme. OPTIONS: \code{"forward"},
+#' \code{"add-remove"} or \code{"rejection"}
 #' @param perturb.prob probability of perturbing a genotype. Genotypes are
 #' perturbed in order to learn the error rate, \eqn{\epsilon}. Defaults to
 #' \code{0.8}
@@ -567,22 +567,22 @@ log.cbn.density <- function(Tdiff, rate) {
 #' pool. This option is used if \code{sampling} is set to \code{"add-remove"}
 #' @param seed seed for reproducibility
 #' @return returns a list containing the importance weights and the sufficient
-#' statistics. If \code{sampling} is set to \code{"backward"}, it returns the
+#' statistics. If \code{sampling} is set to \code{"rejection"}, it returns the
 #' importance weights and the indices of choosed observations from the genotype
 #' pool
 importance.weight_ <- function(
   genotype, L, poset, lambdas, lambda.s, eps, sampling.time=NULL,
-  sampling=c('naive', 'add-remove', 'backward'), perturb.prob=0.8,
+  sampling=c('forward', 'add-remove', 'rejection'), perturb.prob=0.8,
   version="3", dist.pool=NULL, seed=NULL) {
-  
+
   sampling <- match.arg(sampling)
   if (!is.null(seed))
     set.seed(seed)
 
   p <- ncol(poset) # number of events/mutations
-  
-  if (sampling == 'naive') {
-    
+
+  if (sampling == 'forward') {
+
     # Generate L samples from poset with parameters 'lambdas' and 'lambda.s'
     # In particular, epsilon is zero (default value) - because the idea is to
     # generate samples of X (underlying true)
@@ -590,16 +590,16 @@ importance.weight_ <- function(
     # not considered to generate samples - incorporate sampling times in
     # function sample_genotypes
     if (!is.null(sampling.time)) {
-      warning("Naive proposal doesn't account for sampling times")
+      warning("Forward proposal doesn't account for sampling times")
     }
     samples <- sample_genotypes(L, poset, sampling_param=lambda.s, lambdas=lambdas)
     d <- apply(samples$hidden_genotypes, 1, hamming.dist, y=genotype)
     prob.Y.X <- eps^d * (1-eps)^(p-d)
-    
+
     return(list("w"=prob.Y.X, "time.differences"=samples$T_events, "dist"=d))
-    
+
   } else if (sampling == 'add-remove') {
-    
+
     poset.trans.closed <- trans_closure(poset)
     parents <- get.parents(poset.trans.closed)
     children <- get.children(poset.trans.closed)
@@ -610,18 +610,18 @@ importance.weight_ <- function(
                    perturb.prob, version)
     make.compatible.prob <- return.list$make.compatible.prob
     samples <- return.list$samples
-    
+
     # Generate mutation times Tj from sample i
     Tdiff <- apply(samples$X, 1, sample.mutation.times, poset=poset,
                    lambdas=lambdas, lambda.s=lambda.s,
                    sampling.time=sampling.time)
-    
+
     log.proposal.X <- Tdiff["density", ]
     Tdiff <- t(tail(Tdiff, n=-1))
-    
+
     # Hamming distance bewteen samples and genotype
     dist <- apply(samples$X, 1, hamming.dist, y=genotype)
-    
+
     # Computing log(Pr(Y|X))
     if (eps == 0) {
       # NOTE: If all observations are compatible with poset and pertub_prob == 0
@@ -634,15 +634,15 @@ importance.weight_ <- function(
     } else {
       log.Pr.Y.X <- dist*log(eps) + (p - dist) * log(1 - eps)
     }
-    
+
     # Computing log(Pr(X))
     log.Pr.X <- apply(Tdiff, 1, log.cbn.density, rate=lambdas)
-    
+
     # Computing density of the proposal - for correction
-    # proposal : weight accounting for making genotype compatible + weight 
+    # proposal : weight accounting for making genotype compatible + weight
     #            accounting for choosing a possible mutation for perturbing
-    #            the sample + weight accounting for sampling times from 
-    #            a truncated exponential
+    #            the sample + weight accounting for sampling times from a
+    #            truncated exponential
     num.options <- samples$option.set.size
     if (version == "1") {
       log.proposal.Y.X <-
@@ -658,19 +658,19 @@ importance.weight_ <- function(
       log.proposal.Y.X <- log.proposal.Y.X + log(make.compatible.prob)
 
     log.proposal <- log.proposal.Y.X + log.proposal.X
-    
+
     importance.weight <- exp(log.Pr.X + log.Pr.Y.X - log.proposal)
     return(list("w"=importance.weight, "time.differences"=Tdiff, "dist"=dist))
 
-  } else if (sampling == 'backward') {
+  } else if (sampling == 'rejection') {
     ### **TODO** ### what to do when sampling times available. At the moment,
     # not considered to generate samples - incorporate sampling times in
     # function sample_genotypes
     if (is.null(dist.pool)) {
-      stop("Vector of distances expected for backward sampling")
+      stop("Vector of distances expected for rejection sampling")
     }
     # if (is.null(genotype_pool)) {
-    #   stop("Pool of genotypes are expected for backward sampling")
+    #   stop("Pool of genotypes are expected for rejection sampling")
     # }
     K <- length(dist.pool)
     # compatible = is_compatible(genotype, poset)
@@ -730,7 +730,7 @@ importance.weight_ <- function(
 #' option is used if \code{sampling} is set to \code{"add-remove"}
 prob.importance.sampling <- function(
   genotype, L, poset, lambdas, lambda.s, eps, sampling.time=NULL,
-  sampling=c('naive', 'add-remove', 'backward'), perturb.prob=0.8,
+  sampling=c('forward', 'add-remove', 'rejection'), perturb.prob=0.8,
   version="3", dist.pool=NULL, Tdiff.pool=NULL, seed=NULL) {
 
   sampling <- match.arg(sampling)
@@ -749,8 +749,7 @@ prob.importance.sampling <- function(
       Tdiff.pool <- matrix(0)
     probs <-
       importance.weight(genotype, L, poset, lambdas, eps, time=sampling.time,
-                        sampling=sampling, version=version,
-                        perturb.prob=perturb.prob, dist.pool=dist.pool,
+                        sampling=sampling, version=version, dist.pool=dist.pool,
                         Tdiff.pool=Tdiff.pool, lambda.s=lambda.s,
                         seed=as.integer(seed))
   }
@@ -765,7 +764,7 @@ prob.importance.sampling <- function(
 #' @inheritParams importance.weight_
 tdiff.importance.sampling <- function(
   genotype, L, poset, lambdas, lambda.s, eps, sampling.time=NULL,
-  sampling=c('naive', 'add-remove', 'backward'), perturb.prob=0.8,
+  sampling=c('forward', 'add-remove', 'rejection'), perturb.prob=0.8,
   version="3", dist.pool=NULL, seed=NULL) {
 
   sampling <- match.arg(sampling)
@@ -788,7 +787,7 @@ tdiff.importance.sampling <- function(
 #' @inheritParams importance.weight_
 dist.importance.sampling <- function(
   genotype, L, poset, lambdas, lambda.s, eps, sampling.time=NULL,
-  sampling=c('naive', 'add-remove', 'backward'), perturb.prob=0.8,
+  sampling=c('forward', 'add-remove', 'rejection'), perturb.prob=0.8,
   version="3", dist.pool=NULL, seed=NULL) {
 
   sampling <- match.arg(sampling)
@@ -816,8 +815,8 @@ dist.importance.sampling <- function(
 #' @param one.genotype a boolean variable indicating whether only one genotype
 #' is provided
 #' @param sampling.times an optional vector of sampling times per observation
-#' @param sampling type of sampling scheme. OPTIONS: \code{"naive"},
-#' \code{"add-remove"} or \code{"backward"}
+#' @param sampling type of sampling scheme. OPTIONS: \code{"forward"},
+#' \code{"add-remove"} or \code{"rejection"}
 #' @param perturb.prob probability of perturbing a genotype. This option is
 #' used if \code{sampling} is set to \code{"add-remove"}. Defaults to
 #' \code{0.8}
@@ -834,7 +833,7 @@ dist.importance.sampling <- function(
 #' @param seed seed for reproducibility
 prob.empirical_vs_sampling <- function(
   events, L, poset, lambdas, lambda.s, eps, rep=NULL, one.genotype=FALSE,
-  sampling.times=NULL, sampling=c('naive', 'add-remove', 'backward'),
+  sampling.times=NULL, sampling=c('forward', 'add-remove', 'rejection'),
   perturb.prob=0.8, version="3", genotype.pool=NULL, outdir=NULL, outname="",
   binwidth=0.01, seed=NULL) {
 
@@ -847,7 +846,7 @@ prob.empirical_vs_sampling <- function(
 
   if (one.genotype) {
     if (length(sampling.times) > 1) {
-      warning("Only one sampling time was expected. First entry of vector ", 
+      warning("Only one sampling time was expected. First entry of vector ",
                "\'sampling.times\' is used.")
       sampling.times <- sampling.times[1]
     }
@@ -857,8 +856,8 @@ prob.empirical_vs_sampling <- function(
   } else {
     N <- nrow(events)
   }
-  
-  if (sampling == "backward") {
+
+  if (sampling == "rejection") {
     if (one.genotype)
       d_pool <- apply(genotype.pool$samples, 1, hamming.dist, y=genotype)
     Tdiff_pool <- genotype.pool$Tdiff
@@ -871,7 +870,7 @@ prob.empirical_vs_sampling <- function(
     if (!one.genotype) {
       genotype <- events[i, ]
       sampling.time <- sampling.times[i]
-      if (sampling == "backward")
+      if (sampling == "rejection")
         d_pool <- apply(genotype.pool$samples, 1, hamming.dist, y=genotype)
     }
 
@@ -913,19 +912,19 @@ prob.empirical_vs_sampling <- function(
 #' @inheritParams prob.empirical_vs_sampling
 tdiff.empirical_vs_sampling <- function(
   events, L, poset, lambdas, lambda.s, eps, rep=NULL, one.genotype=FALSE,
-  sampling.times=NULL, sampling=c('naive', 'add-remove', 'backward'),
+  sampling.times=NULL, sampling=c('forward', 'add-remove', 'rejection'),
   perturb.prob=0.8, version="3", genotype.pool=NULL, outdir=NULL, outname="",
   binwidth=0.01, seed=NULL) {
 
-  # NOTE: If 'naive' sampling is employed, sampling times are not used.
+  # NOTE: If 'forward' sampling is employed, sampling times are not used.
   sampling <- match.arg(sampling)
-  
+
   if (!is.null(seed))
     set.seed(seed)
 
   if (one.genotype) {
     if (length(sampling.times) > 1) {
-      warning("Only one sampling time was expected. First entry of vector ", 
+      warning("Only one sampling time was expected. First entry of vector ",
               "\'sampling.times\' is used.")
       sampling.times <- sampling.times[1]
     }
@@ -953,12 +952,12 @@ tdiff.empirical_vs_sampling <- function(
                                 sampling.time=sampling.time, sampling=sampling,
                                 perturb.prob=perturb.prob, version=version)
   }
-  
+
   if (!is.null(outdir)) {
     outdir <- file.path(outdir, paste("L", L, "_", sampling, sep=""))
     if (!dir.exists(outdir))
       dir.create(outdir)
-    
+
     for (j in 1:p) {
       pl.name <- file.path(outdir, paste("time_diff_empirical_vs_sampling",
                                          outname, "_j", j, ".pdf", sep=""))
@@ -978,26 +977,26 @@ tdiff.empirical_vs_sampling <- function(
                                binwidth=binwidth)
     }
   }
-  
+
   return(list("empirical"=time.diff.empirical, "sampling"=time.diff.sampling))
 }
 
 #' @inheritParams prob.empirical_vs_sampling
 dist.empirical_vs_sampling <- function(
   events, L, poset, lambdas, lambda.s, eps, rep=NULL, one.genotype=FALSE,
-  sampling.times=NULL, sampling=c('naive', 'add-remove', 'backward'),
+  sampling.times=NULL, sampling=c('forward', 'add-remove', 'rejection'),
   perturb.prob=0.8, version="3", genotype_pool=NULL, outdir=NULL, outname="",
   binwidth=0.01, seed=NULL) {
 
-  # NOTE: If 'naive' sampling is employed, sampling times are not used.
+  # NOTE: If 'forward' sampling is employed, sampling times are not used.
   sampling <- match.arg(sampling)
-  
+
   if (!is.null(seed))
     set.seed(seed)
 
   if (one.genotype) {
     if (length(sampling.times) > 1) {
-      warning("Only one sampling time was expected. First entry of vector ", 
+      warning("Only one sampling time was expected. First entry of vector ",
               "\'sampling.times\' is used.")
       sampling.times <- sampling.times[1]
     }
@@ -1007,10 +1006,10 @@ dist.empirical_vs_sampling <- function(
   } else {
     N <- nrow(events)
   }
-  
+
   dist.empirical <- numeric(N)
   dist.sampling  <- numeric(N)
-  
+
   for (i in 1:N) {
     if (!one.genotype) {
       genotype <- events[i, ]
@@ -1023,7 +1022,7 @@ dist.empirical_vs_sampling <- function(
                                sampling.time=sampling.time, sampling=sampling,
                                perturb.prob=perturb.prob, version=version)
   }
-  
+
   if (!is.null(outdir)) {
     outdir <- file.path(outdir, paste("L", L, "_", sampling, sep=""))
     if (!dir.exists(outdir))
@@ -1045,7 +1044,7 @@ dist.empirical_vs_sampling <- function(
                              one.genotype=one.genotype, outname=outname,
                              binwidth=binwidth)
   }
-  
+
   return(list("empirical"=dist.empirical, "sampling"=dist.sampling))
 }
 
@@ -1064,16 +1063,16 @@ dist.empirical_vs_sampling <- function(
 pl.empirical_vs_sampling <- function(
   empirical, sampling, xlab, ylab="", truth=NULL, N=NULL, one.genotype=FALSE,
   outname=NULL, binwidth=0.01) {
-  
+
   if (one.genotype) {
     df <- data.frame(x=c(empirical, sampling),
                      method=c(rep("empirical", N), rep("sampling", N)))
     pl <- ggplot(df, aes(x = x, fill = method))
     pl <- pl + geom_histogram(binwidth=binwidth, alpha=0.5, position="identity") +
       geom_vline(xintercept=truth, colour="#BB0000") +
-      labs(x=xlab, y="Frequency") + 
+      labs(x=xlab, y="Frequency") +
       theme_bw() + theme(text=element_text(size=14))
-    
+
     if (is.null(outname)) {
       return(pl)
     } else {
@@ -1086,7 +1085,7 @@ pl.empirical_vs_sampling <- function(
       geom_abline(intercept=0, slope=1, colour="blue") +
       labs(x=xlab, y=ylab) +
       theme_bw() + theme(text=element_text(size=14))
-    
+
     if (is.null(outname)) {
       return(pl)
     } else {
@@ -1145,13 +1144,13 @@ initialize.lambda <- function(obs.events, poset, lambda.s, verbose=FALSE) {
 #' @param max.iter the maximum number of EM iterations. Defaults to \code{100}
 #' iterations
 #' @param L number of samples to be drawn from the proposal in the E-step
-#' @param sampling type of sampling scheme. OPTIONS: \code{"naive"} -
+#' @param sampling type of sampling scheme. OPTIONS: \code{"forward"} -
 #' generate occurrence times according to current rate parameters, and, from
 #' them, generate the genotypes; \code{"add-remove"} - generate genotypes from
 #' observed genotypes using a two-steps proposal. First, make genotypes
 #' compatible with the poset by either adding or removing mutations. Second,
 #' perturb this version by adding or removing a mutation while yielding a
-#' compatible observation; \code{"backward"} - generate a pool of compatible
+#' compatible observation; \code{"rejection"} - generate a pool of compatible
 #' genotypes according to current rate parameters and sample \code{K}
 #' observations proportional to the Hamming distance.
 #' @param max.lambda.val an optional upper bound on the value of the rate
@@ -1165,22 +1164,22 @@ initialize.lambda <- function(obs.events, poset, lambda.s, verbose=FALSE) {
 #' \code{"add-remove"} sampling scheme to use. Defaults to \code{3}
 #' @param parallel boolean variable indicating whether sampling should be
 #' executed sequentially (\code{0}) or in parallel (\code{1}). Option is used
-#' if \code{sampling} is set to \code{"naive"}
+#' if \code{sampling} is set to \code{"forward"}
 #' @param verbose an optional argument indicating whether to output logging
 #' information
 #' @param seed seed for reproducibility
 MCEM.hcbn_ <- function(
   poset, obs.events, sampling.times=NULL, lambda.s=1.0, max.iter=100,
-  burn_in=0.8, L=100, sampling=c('naive', 'add-remove', 'backward'),
+  burn_in=0.8, L=100, sampling=c('forward', 'add-remove', 'rejection'),
   max.lambda.val=1e6, perturb.prob=0.3, version="3", parallel=TRUE,
   verbose=TRUE, seed=NULL) {
 
-  # NOTE: If 'naive' sampling is employed, sampling times are not used.
+  # NOTE: If 'forward' sampling is employed, sampling times are not used.
   sampling <- match.arg(sampling)
-  
+
   if (!is.null(seed))
     set.seed(seed, kind="L'Ecuyer-CMRG")
-  
+
   p <- ncol(poset)       # number of events/mutations
   N <- nrow(obs.events)  # number of observations/genotypes
 
@@ -1188,11 +1187,11 @@ MCEM.hcbn_ <- function(
     avg.sampling.t <- lambda.s
   } else {
     avg.sampling.t <- mean(sampling.times)
-    if (sampling == 'naive') {
-      warning("Naive proposal doesn't account for sampling times")
+    if (sampling == 'forward') {
+      warning("Forward proposal doesn't account for sampling times")
     }
   }
-  
+
   # initialize lambdas
   lambdas <-
     initialize.lambda(obs.events=obs.events, poset=poset, lambda.s=lambda.s)
@@ -1210,13 +1209,13 @@ MCEM.hcbn_ <- function(
   # initialize epsilon
   eps <- 1 - compatible.obs$fraction
   eps <- ifelse(eps == 0, runif(1, 0, 0.0001), eps)
-  
+
   avg.eps <- 0
   avg.lambdas <- numeric(p)
   avg.llhood <- 0
-  
+
   record.iter <- max(as.integer(burn_in * max.iter), 1)
-  
+
   if (sampling == 'add-remove') {
     poset_trans_closed <- trans_closure(poset)
     parents <- get.parents(poset_trans_closed)
@@ -1224,11 +1223,11 @@ MCEM.hcbn_ <- function(
     ### **TODO** ###  at the moment, compatibility test is performed for each genotype
     #idx_compatible = apply(obs.events, 1, is_compatible, poset=poset)
   }
-  
+
   llhood <- numeric()
   iter <- 1
   while(iter <= max.iter) {
-    
+
     if (iter > 2) {
       if (abs(llhood[iter - 1] - llhood[iter - 2]) < 1e-4)
         break
@@ -1237,8 +1236,8 @@ MCEM.hcbn_ <- function(
     # E step
     # Compute for each event j, expected.Tdiff[j] = E[T_j - max_{u \in pa(j)} T_u | Y]
     # Compute expected.dist
-    if (sampling == 'naive') {
-      
+    if (sampling == 'forward') {
+
       if (!parallel) {
         expected.dist = numeric(N)
         expected.Tdiff = matrix(0, nrow=N, ncol=p)
@@ -1247,11 +1246,11 @@ MCEM.hcbn_ <- function(
           e.step <-
             importance.weight_(genotype=obs.events[i, ], L=L, poset=poset,
                                lambdas=lambdas, lambda.s=lambda.s, eps=eps,
-                               sampling.time=NULL, sampling='naive')
+                               sampling.time=NULL, sampling='forward')
 
           # Conditional expectation of the sufficient statistic d(X, Y)
           expected.dist[i] = sum(e.step$w * e.step$dist) / sum(e.step$w)
-          
+
           # Contitional expectation of the sufficient statistic Z_j
           # Z_j = t_j - max_{u \in pa(j)} t_u
           expected.Tdiff[i, ] = colSums(e.step$w * e.step$time.differences) /
@@ -1259,15 +1258,15 @@ MCEM.hcbn_ <- function(
         }
       } else {
         ret <- foreach(i=1:N, .combine='rbind', .packages="mccbn") %dopar% {
-          
+
           # Draw L samples from poset with parameters 'lambdas' and 'lambda.s'
           e.step <-
             importance.weight_(genotype=obs.events[i, ], L=L, poset=poset,
                                lambdas=lambdas, lambda.s=lambda.s, eps=eps,
-                               sampling.time=NULL, sampling='naive')
+                               sampling.time=NULL, sampling='forward')
           # Conditional expectation of the sufficient statistic d(X, Y)
           expected.dist = sum(e.step$w * e.step$dist) / sum(e.step$w)
-          
+
           # Contitional expectation of the sufficient statistic Z_j
           # Z_j = t_j - max_{u \in pa(j)} t_u
           expected.Tdiff = colSums(e.step$w * e.step$time.differences) /
@@ -1278,12 +1277,12 @@ MCEM.hcbn_ <- function(
         expected.Tdiff <- ret[, -1]
         colnames(expected.Tdiff) <- NULL
       }
-      
+
     } else if (sampling == 'add-remove') {
-      
+
       if (verbose) cat("E-step - ", iter, "\n")
       ret <- foreach(i=1:N, .combine='rbind', .packages="mccbn") %dopar% {
-        
+
         # In each iteration and for each observation, draw L samples from proposal
         # two-steps proposal: make compatible and perturb
         # 1. Make genotypes compatible by adding or removing 1's
@@ -1297,7 +1296,7 @@ MCEM.hcbn_ <- function(
                              version=version)
         # Conditional expectation of the sufficient statistic d(X, Y)
         expected.dist <- sum(e.step$w * e.step$dist) / sum(e.step$w)
-        
+
         # Contitional expectation of the sufficient statistic Z_j
         # Z_j = t_j - max_{u \in pa(j)} t_u
         expected.Tdiff <- colSums(e.step$w * e.step$time.differences) /
@@ -1309,7 +1308,7 @@ MCEM.hcbn_ <- function(
       expected.Tdiff <- ret[, -1]
       colnames(expected.Tdiff) <- NULL
 
-    } else if (sampling == 'backward') {
+    } else if (sampling == 'rejection') {
 
       K <- min(max(2^(p + 1), 2*L), 1e8 / (8 * p))
       genotype_pool <-
@@ -1318,14 +1317,14 @@ MCEM.hcbn_ <- function(
       ret <- foreach(i=1:N, .combine='rbind', .packages="mccbn") %dopar% {
 
         # In each iteration and for each observation, draw L samples from proposal
-        # backward sampling: sample X genotypes according to the epsilon and
+        # rejection sampling: sample X genotypes according to the epsilon and
         # Hamming distance to the observed genotype, Y
         d_pool <-
           apply(genotype_pool$obs_events, 1, hamming.dist, y=obs.events[i, ])
         e.step <-
           importance.weight_(genotype=obs.events[i, ], L=L, poset=poset,
                              lambdas=lambdas, lambda.s=lambda.s, eps=eps,
-                             sampling.time=NULL, sampling='backward',
+                             sampling.time=NULL, sampling='rejection',
                              genotype.pool=genotype_pool$obs_events,
                              dist.pool=d_pool)
         # Conditional expectation of the sufficient statistic d(X, Y)
@@ -1353,29 +1352,29 @@ MCEM.hcbn_ <- function(
       save(expected.dist,
            file=paste("expected.dist_p", p, "_iter", iter, ".RData", sep=""))
     }
-    
+
     # M step
     eps <- mean(expected.dist) / p
     lambdas <- 1 / apply(expected.Tdiff, 2, mean)
     if (verbose) cat("M-step - ", iter, "epsilon: ", eps,  "\n")
     if (any(lambdas > max.lambda.val)) {
-      idx = which(lambdas > max.lambda.val)
-      lambdas[idx] = max.lambda.val
+      idx <- which(lambdas > max.lambda.val)
+      lambdas[idx] <- max.lambda.val
     }
-    
+
     llhood <- c(llhood,
                 complete.loglikelihood_(lambdas, eps, expected.Tdiff,
                                         expected.dist))
-    
+
     if (verbose)
       cat("Iteration:", iter, "- Log-likelihood: ", llhood[iter], "\n")
-    
+
     if (iter > record.iter) {
       if (verbose)
         cat("Recording parameters .. \n")
-      avg.eps     <- avg_eps + eps
-      avg.lambdas <- avg_lambdas + lambdas
-      avg.llhood  <- avg_llhood + llhood[iter]
+      avg.eps     <- avg.eps + eps
+      avg.lambdas <- avg.lambdas + lambdas
+      avg.llhood  <- avg.llhood + llhood[iter]
     }
     iter <- iter + 1
   }
@@ -1383,8 +1382,8 @@ MCEM.hcbn_ <- function(
   avg.lambdas <- avg.lambdas / (max.iter - record.iter)
   avg.llhood  <- avg.llhood / (max.iter - record.iter)
   return(list("lambdas"=lambdas, "eps"=eps, "llhood"=llhood,
-              "avg.lambdas"=avg_lambdas, "avg.eps"=avg_eps,
-              "avg.llhood"=avg_llhood))
+              "avg.lambdas"=avg.lambdas, "avg.eps"=avg.eps,
+              "avg.llhood"=avg.llhood))
 }
 
 #' @title Observed Log-Likelihood
@@ -1398,11 +1397,10 @@ MCEM.hcbn_ <- function(
 #' @param eps error rate
 #' @param times an optional vector of sampling times per observation
 #' @param L number of samples to be drawn from the proposal
-#' @param sampling type of sampling scheme. OPTIONS: \code{"naive"},
-#' \code{"add-remove"} or \code{"backward"}
+#' @param sampling type of sampling scheme. OPTIONS: \code{"forward"},
+#' \code{"add-remove"} or \code{"rejection"}
 #' @param version an integer indicating which version of the
 #' \code{"add-remove"} sampling scheme to use
-#' @param perturb.prob probability of perturbing a genotype
 #' @param genotype.pool an optional matrix containing sampled genotypes
 #' @param Tdiff.pool Expected time differences for the genotype pool. This
 #' option is used if \code{sampling} is set to \code{"add-remove"}
@@ -1411,7 +1409,7 @@ MCEM.hcbn_ <- function(
 #' @param seed seed for reproducibility
 obs.loglikelihood <- function(
   obs, poset, lambda, eps, times=NULL, L,
-  sampling=c('naive', 'add-remove', 'backward'), version, perturb.prob,
+  sampling=c('forward', 'add-remove', 'rejection'), version,
   genotype.pool=matrix(0L), Tdiff.pool=matrix(0), lambda.s=1.0, thrds=1L,
   seed=NULL) {
 
@@ -1438,9 +1436,8 @@ obs.loglikelihood <- function(
 
 
   .Call("_obs_log_likelihood", PACKAGE = 'mccbn', obs, poset, lambda,
-        eps, times, L, sampling, version, perturb.prob, genotype.pool,
-        Tdiff.pool, lambda.s, sampling.times.available, as.integer(thrds),
-        as.integer(seed))
+        eps, times, L, sampling, version, genotype.pool, Tdiff.pool, lambda.s,
+        sampling.times.available, as.integer(thrds), as.integer(seed))
 }
 
 #' @title Sample genotypes
