@@ -1,0 +1,107 @@
+#' @title Adaptive simulated annealing
+#' 
+#' @export
+#' 
+#' @description structure learning using adaptive simulated annealing
+#' 
+#' @param poset a matrix containing the cover relations
+#' @param obs a matrix of observations, where each row correponds to a
+#' vector indicating whether an event has been observed (\code{1}) or not
+#' (\code{0})
+#' @param lambda a vector of the rate parameters
+#' @param eps error rate
+#' @param times an optional vector of sampling times per observation
+#' @param lambda.s rate of the sampling process. Defaults to \code{1.0}
+#' @param weights a vector containing observation weights
+#' @param L number of samples to be drawn from the proposal in the E-step
+#' @param sampling sampling scheme. OPTIONS: \code{"forward"} - generate
+#' occurrence times according to current rate parameters, and, from them,
+#' generate the genotypes; \code{"add-remove"} - generate genotypes from
+#' observed genotypes using a two-steps proposal. First, make genotypes
+#' compatible with the poset by either adding or removing mutations. Second,
+#' perturb this version by adding or removing a mutation while yielding a
+#' compatible observation; \code{"rejection"} - generate a pool of compatible
+#' genotypes according to current rate parameters and sample \code{K}
+#' observations proportional to the Hamming distance.
+#' @param version an optional arguement indicating which version of the
+#' \code{"add-remove"} sampling scheme to use. Defaults to \code{3}
+#' @param max.iter the maximum number of EM iterations. Defaults to \code{100}
+#' iterations
+#' @param update.step.size number of EM steps after which the number of
+#' samples, \code{L}, is doubled. \code{L} is increased, if the difference in
+#' the parameter estimates between such consecutive batches is greater than the
+#' tolerance level, \code{tol}
+#' @param tol convergence tolerance for the error rate and the rate parameters.
+#' The EM runs until the difference between the average estimates in the last
+#' two batches is smaller than tol, or until \code{max.iter} is reached.
+#' @param max.lambda.val an optional upper bound on the value of the rate
+#' parameters. Defaults to \code{1e6}
+#' @param T0 inital value of the temperature. Defaults to \code{50}
+#' @param adap.rate an optional argument specifying the constant adaptation
+#' rate. Defaults to \code{0.3}
+#' @param acceptance.rate an optional argument specifying a desirable
+#' acceptance rate. Defaults to 1/\code{p}, where \code{p} is the number of
+#' events or mutations
+#' @param step.size an optional argument indicating the number or iterations
+#' after which the temperature should be updated. Defaults to \code{50}
+#' @param max.iter.asa the maximum number of iterations. Defaults to
+#' \code{10000} iterations
+#' @param outdir an optional argument indicating the path to the output
+#' directory
+#' @param thrds number of threads for parallel execution
+#' @param verbose an optional argument indicating whether to output logging
+#' information
+#' @param seed seed for reproducibility
+adaptive.simulated.annealing <- function(
+  poset, obs, lambda, eps, times=NULL, lambda.s=1.0, weights=NULL, L,
+  sampling=c('forward', 'add-remove', 'rejection'), version=3L, max.iter=100L,
+  update.step.size=20L, tol=0.001, max.lambda.val=1e6, T0=50, adap.rate=0.3,
+  acceptance.rate=NULL, step.size=NULL, max.iter.asa=10000L, outdir=NULL,
+  thrds=1L, verbose=FALSE, seed=NULL) {
+  
+  sampling <- match.arg(sampling)
+  N <- nrow(obs)
+  
+  if (!is.integer(poset))
+    poset <- matrix(as.integer(poset), nrow=nrow(poset), ncol=ncol(poset))
+  
+  if (!is.integer(obs))
+    obs <- matrix(as.integer(obs), nrow=N, ncol=ncol(obs))
+  
+  if (is.null(times)) {
+    times <- numeric(N)
+    sampling.times.available <- FALSE
+  } else {
+    sampling.times.available <- TRUE
+  }
+  if (is.null(weights))
+    weights <- rep(1, N)
+
+  if (update.step.size > max.iter)
+    update.step.size <- as.integer(max.iter / 5)
+
+  if (is.null(acceptance.rate)) {
+    p <- ncol(obs)
+    acceptance.rate <- 1/p
+  }
+  
+  if (is.null(step.size))
+    step.size <- floor(max.iter/10)
+
+  if (is.null(outdir))
+    outdir <- getwd()
+  
+  if (is.null(seed))
+    seed <- sample.int(3e4, 1)
+  
+  if (is.null(eps)) {
+    set.seed(seed)
+    eps <- runif(1, 0.01, 0.3)
+  }
+  .Call('_adaptive_simulated_annealing', PACKAGE='mccbn', poset, obs, lambda,
+        eps, times, lambda.s, weights, as.integer(L), sampling,
+        as.integer(version), as.integer(max.iter), as.integer(update.step.size),
+        tol, max.lambda.val, T0, adap.rate, acceptance.rate,
+        as.integer(step.size), as.integer(max.iter.asa), outdir,
+        sampling.times.available, as.integer(thrds), verbose, as.integer(seed))
+}

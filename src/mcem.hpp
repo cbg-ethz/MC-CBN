@@ -204,6 +204,11 @@ edge_container adjacency_mat2list(const MatrixXi& poset);
 
 MatrixXi adjacency_list2mat(const Model& model);
 
+bool is_compatible(const RowVectorXb& genotype, const Model& model);
+
+int num_compatible_observations(const MatrixXb& obs, const Model& poset,
+                                const unsigned int N);
+
 void handle_exceptions();
 
 Rcpp::NumericMatrix generateMutationTimes(
