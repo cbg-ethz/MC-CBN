@@ -1,4 +1,5 @@
-
+#' @export
+#' @noRd
 my.topological.sort <- function(poset) {
   p = ncol(poset)
   sorted.list = rep(0, p)
@@ -11,7 +12,8 @@ my.topological.sort <- function(poset) {
   sorted.list
 }
 
-
+#' @export
+#' @noRd
 is_compatible <- function(genotype, poset) {
   p = nrow(poset)
   for(i in 1:p) {
@@ -28,6 +30,8 @@ is_compatible <- function(genotype, poset) {
 }
 
 # much faster than old implementation
+#' @export
+#' @noRd
 compatible_genotypes <- function (X, poset)
 {
   compatible_indexes = c()
@@ -39,7 +43,8 @@ compatible_genotypes <- function (X, poset)
   list( fraction=length(compatible_indexes)/nrow(X), compatible_indexes=compatible_indexes)
 }
 
-
+#' @export
+#' @noRd
 random_poset <- function(p, graph_density=0.15, trans_reduced = TRUE){
   random_posets(nr_pos=1, nr_muts=p , ldenses=graph_density, trans_reduced = trans_reduced)[[1]]
 }
@@ -81,6 +86,8 @@ random_posets <- function(nr_pos, nr_muts , ldenses, trans_reduced = TRUE){
 }
 
 ########### transitive closure and reduction of a poset
+#' @export
+#' @noRd
 trans_closure <- function(A) {
   old_names = dimnames(A)
   
@@ -95,6 +102,8 @@ trans_closure <- function(A) {
   res
 }
 
+#' @export
+#' @noRd
 trans_reduction <- function(A) {
   
   old_names = dimnames(A)
@@ -112,7 +121,8 @@ trans_reduction <- function(A) {
 
 
 ############# plotting a cbn
-
+#' @export
+#' @noRd
 plot_poset <- function(robust_poset, size=12) {
   Names = colnames(robust_poset)
   colnames(robust_poset) <- Names

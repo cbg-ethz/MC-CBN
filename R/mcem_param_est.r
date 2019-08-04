@@ -35,8 +35,8 @@ initialize_lambda <- function ( obs_events, average_sampling_times, poset, verbo
   sapply(theta, function(x) { -log(max(1-x, 0.00001)) /average_sampling_times })
 }
 
-
-
+#' @export
+#' @noRd
 estimate_mutation_rates <- function(poset, genotypes, sampling_times=NULL, weights = NULL, max_iter=100,  zeta = 0.2, ilambda = NULL,
                           nrOfSamples = 5, verbose = TRUE, maxLambdaValue=10^6, lambda_s=1.0) {
   sampling_times_available = is.null(sampling_times) == FALSE
