@@ -67,6 +67,19 @@ std::vector<int> rdiscrete_std(const unsigned int N, const VectorXd weights,
   return ret;
 }
 
+//' @noRd
+std::vector<int> runif_int_std(const unsigned int N, const int upper_limit,
+                               std::mt19937& rng) {
+
+  std::uniform_int_distribution<int> distribution(0, upper_limit);
+  std::vector<int> ret(N);
+
+  for (unsigned int i = 0; i < N; ++i)
+    ret[i] = distribution(rng);
+
+  return ret;
+}
+
 VectorXd log_bernoulli_process(const VectorXd& dist, const double eps,
                                const unsigned int p) {
 
@@ -151,7 +164,7 @@ double obs_log_likelihood(
       DataImportanceSampling importance_sampling = importance_weight(
         obs.row(i), L, model, times[i], sampling, version, dist_pool,
         Tdiff_pool, rngs[omp_get_thread_num()], sampling_times_available);
-      llhood = llhood + std::log(importance_sampling.w.sum() / L);
+      llhood += std::log(importance_sampling.w.sum() / L);
     }
   }
   return llhood;
@@ -260,39 +273,35 @@ DataImportanceSampling importance_weight(
   } else if (sampling == "add-remove") {
     //TODO
   } else if (sampling == "rejection") {
-    const unsigned int K = dist_pool.size();
-    VectorXd log_prob_Y_X(L);
-    VectorXd log_proposal(L);
-    VectorXd q_prob_selected(L);
-
     VectorXd d_pool = dist_pool.cast<double>();
     VectorXd q_prob = pow(model.get_epsilon(), d_pool.array()) *
       pow(1 - model.get_epsilon(), p - d_pool.array());
     /* In the unlikely event that q_prob is 0 for all samples, default to
      * random sampling
      */
-    if (q_prob.sum() == 0)
-        q_prob.setConstant(1);
-    q_prob /= q_prob.sum();
+    bool random = false;
+    if (q_prob.sum() == 0) {
+      q_prob.setConstant(1);
+      random = true;
+    }
+    double q_prob_sum = q_prob.sum();
+    q_prob /= q_prob_sum;
 
     // Draw L samples with replacement and with weights q_prob
     std::vector<int> idxs_sample = rdiscrete_std(L, q_prob, rng);
     int idx;
     for (unsigned int l = 0; l < L; ++l) {
-      // TODO: can this be done better?
       idx = idxs_sample[l];
       importance_sampling.dist(l) = dist_pool(idx);
-      q_prob_selected(l) = q_prob(idx);
       importance_sampling.Tdiff.row(l) = Tdiff_pool.row(idx);
     }
 
-    log_prob_Y_X = log_bernoulli_process(importance_sampling.dist.cast<double>(),
-                                         model.get_epsilon(), p);
-
-    // Computing density of the proposal - for correction
-    log_proposal = q_prob_selected.array().log() + log(K);
-
-    importance_sampling.w = (log_prob_Y_X - log_proposal).array().exp();
+    if (random)
+      importance_sampling.w =
+        log_bernoulli_process(importance_sampling.dist.cast<double>(),
+                              model.get_epsilon(), p).array().exp();
+    else
+      importance_sampling.w.setConstant(q_prob_sum / dist_pool.size());
   }
 
   return importance_sampling;
@@ -322,9 +331,9 @@ double MCEM_hcbn(
   VectorXd expected_dist(N);
   MatrixXd expected_Tdiff(N, p);
   VectorXd Tdiff_colsum(p);
+  MatrixXd Tdiff_pool;
+  MatrixXb genotype_pool;
 
-  // MatrixXb genotype_pool;
-  // MatrixXd Tdiff_pool;
   if (sampling == "rejection") {
     // if (p < 19) {
     //   K = std::max((unsigned int) pow(2, p + 1), 2 * L);
@@ -333,9 +342,10 @@ double MCEM_hcbn(
     //   K = p * L;
     // }
     K = p * L;
-    // genotype_pool.resize(K, p);
-    // Tdiff_pool.resize(K, p);
-    std::cout << "Size of the genotype pool: " << K << std::endl;
+    genotype_pool.resize(K, p);
+    Tdiff_pool.resize(K, p);
+    if (ctx.get_verbose())
+      std::cout << "Size of the genotype pool: " << K << std::endl;
   }
 
   if (ctx.get_verbose()) {
@@ -355,7 +365,7 @@ double MCEM_hcbn(
         if (std::abs(avg_eps - avg_eps_current) <= control_EM.tol &&
             ((avg_lambda - avg_lambda_current).array().abs() <= control_EM.tol).all())
           break;
-        L *= 2;
+        // L *= 2;
       }
       avg_lambda = avg_lambda_current;
       avg_eps = avg_eps_current;
@@ -373,20 +383,17 @@ double MCEM_hcbn(
      * Conditional expectation for the sufficient statistics per observation
      * and event
      */
-    // NOTE: All threads sharing same pool
-    // if (sampling == "rejection") {
-    //   VectorXd T_sampling;
-    //   if (sampling_times_available) {
-    //     // Sample with replacement from vector containing sampling times
-    //     T_sampling.resize(K);
-    //     NumericVector times_aux(wrap(times));
-    //     NumericVector aux = sample(times_aux, K, true);
-    //     T_sampling = as<MapVecd>(aux);
-    //   }
-    //   genotype_pool = sample_genotypes(
-    //     K, model, topo_path, Tdiff_pool, T_sampling, ctx.rng,
-    //     sampling_times_available);
-    // }
+    if (sampling == "rejection") {
+      /* All threads share the same pool of genotypes */
+      VectorXd T_sampling(K);
+      if (sampling_times_available) {
+        std::vector<int> idxs = runif_int_std(K, N - 1, ctx.rng);
+        for (unsigned int i = 0; i < K; ++i)
+          T_sampling[i] = times[idxs[i]];
+      }
+      genotype_pool = sample_genotypes(K, model, Tdiff_pool, T_sampling,
+                                       ctx.rng, sampling_times_available);
+    }
     #ifdef _OPENMP
       omp_set_num_threads(thrds);
     #endif
@@ -395,19 +402,8 @@ double MCEM_hcbn(
     #pragma omp parallel for schedule(static)
     for (unsigned int i = 0; i < N; ++i) {
       VectorXi d_pool;
-      MatrixXd Tdiff_pool;
-      if (sampling == "rejection") {
-        Tdiff_pool.resize(K, p);
-        VectorXd T_sampling;
-        if (sampling_times_available) {
-          T_sampling.resize(K);
-          T_sampling.setConstant(times(i));
-        }
-        MatrixXb genotype_pool = sample_genotypes(
-          K, model, Tdiff_pool, T_sampling, rngs[omp_get_thread_num()],
-          sampling_times_available);
+      if (sampling == "rejection")
         d_pool = hamming_dist_mat(genotype_pool, obs.row(i));
-      }
       DataImportanceSampling importance_sampling = importance_weight(
         obs.row(i), L, model, times(i), sampling, version, d_pool, Tdiff_pool,
         rngs[omp_get_thread_num()], sampling_times_available);
@@ -576,7 +572,7 @@ RcppExport SEXP _MCEM_hcbn(
   return R_NilValue;
 }
 
-RcppExport SEXP _importance_weight(
+RcppExport SEXP _importance_weight_genotype(
     SEXP genotypeSEXP, SEXP LSEXP, SEXP posetSEXP, SEXP lambdaSEXP,
     SEXP epsSEXP, SEXP timeSEXP, SEXP samplingSEXP, SEXP versionSEXP,
     SEXP d_poolSEXP, SEXP Tdiff_poolSEXP, SEXP lambda_sSEXP,
@@ -622,6 +618,90 @@ RcppExport SEXP _importance_weight(
   return R_NilValue;
 }
 
+RcppExport SEXP _importance_weight(
+    SEXP obsSEXP, SEXP LSEXP, SEXP posetSEXP, SEXP lambdaSEXP,
+    SEXP epsSEXP, SEXP timesSEXP, SEXP samplingSEXP, SEXP versionSEXP,
+    SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP, SEXP thrdsSEXP,
+    SEXP seedSEXP) {
+
+  try {
+    // Convert input to C++ types
+    const MatrixXb& obs = as<MatrixXb>(obsSEXP);
+    const unsigned int L = as<unsigned int>(LSEXP);
+    const MapMati poset(as<MapMati>(posetSEXP));
+    const MapVecd lambda(as<MapVecd>(lambdaSEXP));
+    const double eps = as<double>(epsSEXP);
+    const MapVecd times(as<MapVecd>(timesSEXP));
+    const std::string& sampling = as<std::string>(samplingSEXP);
+    const unsigned int version = as<unsigned int>(versionSEXP);
+    const float lambda_s = as<float>(lambda_sSEXP);
+    const bool sampling_times_available = as<bool>(sampling_times_availableSEXP);
+    const int thrds = as<int>(thrdsSEXP);
+    const int seed = as<int>(seedSEXP);
+
+    const unsigned int N = obs.rows(); // Number of observations / genotypes
+    const auto p = poset.rows();       // Number of mutations / events
+    unsigned int K = 0;
+    VectorXi d_pool;
+    MatrixXb genotype_pool;
+    MatrixXd Tdiff_pool;
+    VectorXd w_sum(N);
+    VectorXd expected_dist(N);
+    MatrixXd expected_Tdiff(N, p);
+    edge_container edge_list = adjacency_mat2list(poset);
+    Model M(edge_list, p, lambda_s);
+    M.set_lambda(lambda);
+    M.set_epsilon(eps);
+    M.has_cycles();
+    if (M.cycle)
+      throw not_acyclic_exception();
+    M.topological_sort();
+
+    Context ctx(seed);
+
+    if (sampling == "rejection") {
+      K = p * L;
+      Tdiff_pool.resize(K, p);
+      genotype_pool.resize(K, p);
+      VectorXd T_sampling(K);
+      if (sampling_times_available) {
+        std::vector<int> idxs = runif_int_std(K, N - 1, ctx.rng);
+        for (unsigned int i = 0; i < K; ++i)
+          T_sampling[i] = times[idxs[i]];
+      }
+      genotype_pool = sample_genotypes(K, M, Tdiff_pool, T_sampling,
+                                       ctx.rng, sampling_times_available);
+    }
+    #ifdef _OPENMP
+    omp_set_num_threads(thrds);
+    #endif
+    auto rngs = ctx.get_auxiliary_rngs(thrds);
+
+    #pragma omp parallel for schedule(static)
+    for (unsigned int i = 0; i < N; ++i) {
+      VectorXi d_pool;
+      if (sampling == "rejection")
+        d_pool = hamming_dist_mat(genotype_pool, obs.row(i));
+
+      // Call the underlying C++ function
+      DataImportanceSampling w = importance_weight(
+        obs.row(i), L, M, times(i), sampling, version, d_pool, Tdiff_pool,
+        rngs[omp_get_thread_num()], sampling_times_available);
+
+      w_sum[i] = w.w.sum();
+      expected_dist[i] = w.w.dot(w.dist.cast<double>()) / w_sum[i];
+      expected_Tdiff.row(i) = (w.Tdiff.transpose() * w.w) / w_sum[i];
+    }
+
+    // Return the result as a SEXP
+    return List::create(_["w"]=w_sum, _["dist"]=expected_dist,
+                        _["Tdiff"]=expected_Tdiff);
+  } catch  (...) {
+    handle_exceptions();
+  }
+  return R_NilValue;
+}
+
 RcppExport SEXP _sample_genotypes(
     SEXP NSEXP, SEXP posetSEXP, SEXP lambdaSEXP, SEXP T_eventsSEXP,
     SEXP T_samplingSEXP, SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP,
@@ -654,7 +734,7 @@ RcppExport SEXP _sample_genotypes(
 
     // Return the result as a SEXP
     return List::create(_["samples"]=samples, _["Tdiff"]=T_events,
-                        _["T_sampling"]=T_sampling);
+                        _["sampling_time"]=T_sampling);
   } catch  (...) {
     handle_exceptions();
   }

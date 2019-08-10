@@ -7,11 +7,13 @@
 importance.weight(genotype, L, poset, lambda, eps, time = NULL,
   sampling = c("forward", "add-remove", "rejection"), version = NULL,
   dist.pool = integer(0), Tdiff.pool = matrix(0), lambda.s = 1,
-  seed = NULL)
+  thrds = 1L, seed = NULL)
 }
 \arguments{
-\item{genotype}{a binary vector indicating whether an event has been
-observed (\code{1}) or not (\code{0})}
+\item{genotype}{either a binary vector or a matrix containing observations
+or genotypes. Each row of the matrix corresponds to a genotype vector whose
+entries indicate whether an event has been observed (\code{1}) or not
+(\code{0})}
 
 \item{L}{number of samples to be drawn from the proposal}
 
@@ -37,12 +39,17 @@ observations proportional to the Hamming distance}
 \code{"add-remove"} sampling scheme to use.}
 
 \item{dist.pool}{Hamming distance between \code{genotype} and the genotype
-pool. This option is used if \code{sampling} is set to \code{"rejection"}}
+pool. This option is used if \code{sampling} is set to \code{"rejection"}
+and \code{genotype} corresponds to a vector containing a single genotype}
 
 \item{Tdiff.pool}{Expected time differences for the genotype pool. This
-option is used if \code{sampling} is set to \code{"rejection"}}
+option is used if \code{sampling} is set to \code{"rejection"} and
+\code{genotype} corresponds to a vector containing a single genotype}
 
 \item{lambda.s}{rate of the sampling process. Defaults to \code{1.0}}
+
+\item{thrds}{number of threads for parallel execution. This option is used
+if \code{genotype} corresponds to a matrix of genotypes}
 
 \item{seed}{seed for reproducibility}
 }

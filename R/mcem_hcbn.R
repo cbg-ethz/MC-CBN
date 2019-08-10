@@ -86,8 +86,10 @@ MCEM.hcbn <- function(
 #' @description compute the sufficient statistics in expectation using
 #' importance sampling
 #'
-#' @param genotype a binary vector indicating whether an event has been
-#' observed (\code{1}) or not (\code{0})
+#' @param genotype either a binary vector or a matrix containing observations
+#' or genotypes. Each row of the matrix corresponds to a genotype vector whose
+#' entries indicate whether an event has been observed (\code{1}) or not
+#' (\code{0})
 #' @param L number of samples to be drawn from the proposal
 #' @param poset a matrix containing the cover relations
 #' @param lambda a vector of the rate parameters
@@ -106,17 +108,26 @@ MCEM.hcbn <- function(
 #' \code{"add-remove"} sampling scheme to use.
 #' @param dist.pool Hamming distance between \code{genotype} and the genotype
 #' pool. This option is used if \code{sampling} is set to \code{"rejection"}
+#' and \code{genotype} corresponds to a vector containing a single genotype
 #' @param Tdiff.pool Expected time differences for the genotype pool. This
-#' option is used if \code{sampling} is set to \code{"rejection"}
+#' option is used if \code{sampling} is set to \code{"rejection"} and
+#' \code{genotype} corresponds to a vector containing a single genotype
 #' @param lambda.s rate of the sampling process. Defaults to \code{1.0}
+#' @param thrds number of threads for parallel execution. This option is used
+#' if \code{genotype} corresponds to a matrix of genotypes
 #' @param seed seed for reproducibility
 importance.weight <- function(
   genotype, L, poset, lambda, eps, time=NULL,
   sampling=c('forward', 'add-remove', 'rejection'), version=NULL,
-  dist.pool=integer(0), Tdiff.pool=matrix(0), lambda.s=1.0, seed=NULL) {
+  dist.pool=integer(0), Tdiff.pool=matrix(0), lambda.s=1.0, thrds=1L,
+  seed=NULL) {
 
   sampling <- match.arg(sampling)
-  if (!is.integer(genotype))
+  if (is.matrix(genotype))
+    if (!is.integer(genotype))
+      genotype <-
+        matrix(as.integer(genotype), nrow=nrow(genotype), ncol=ncol(genotype))
+  else if (!is.integer(genotype))
     genotype <- as.integer(genotype)
 
   if (!is.integer(poset))
@@ -124,13 +135,18 @@ importance.weight <- function(
 
   if (is.null(time)) {
     time <- 0
+    if (is.matrix(genotype))
+      time <- numeric(nrow(genotype))
     sampling.times.available <- FALSE
   } else {
     sampling.times.available <- TRUE
+    if (is.matrix(genotype))
+      if (length(sampling.times) != nrow(genotype))
+        stop("A vector of length ",  nrow(genotype), " is expected")
   }
   if (is.null(version))
     version <- 0
-  else (!is.integer(version))
+  else if (!is.integer(version))
     version <- as.integer(version)
 
   if (!is.integer(dist.pool))
@@ -142,9 +158,14 @@ importance.weight <- function(
   if (is.null(seed))
     seed <- sample.int(3e4, 1)
 
-  .Call('_importance_weight', PACKAGE = 'mccbn', genotype, L, poset, lambda,
-        eps, time, sampling, version, dist.pool, Tdiff.pool, lambda.s,
-        sampling.times.available, as.integer(seed))
+  if (is.matrix(genotype))
+    .Call('_importance_weight', PACKAGE = 'mccbn', genotype, L, poset, lambda,
+          eps, time, sampling, version, lambda.s, sampling.times.available,
+          as.integer(thrds),  as.integer(seed))
+  else
+    .Call('_importance_weight_genotype', PACKAGE = 'mccbn', genotype, L, poset,
+          lambda, eps, time, sampling, version, dist.pool, Tdiff.pool, lambda.s,
+          sampling.times.available, as.integer(seed))
 }
 
 #' @title Complete-data Log-Likelihood
