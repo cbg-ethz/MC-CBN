@@ -92,13 +92,16 @@ complete.loglikelihood_ <- function(lambdas, eps, Tdiff, dist) {
 #' @param L number of samples to be drawn from the proposal. Defaults to
 #' \code{1000}
 #' @param genotype.pool an optional list containing sampled genotypes and
-#' corresponding occurrence times. This argument is required if \code{sampling}
-#' is set to \code{"rejection"}
+#' corresponding occurrence times. If this option is provided, the same
+#' genotype pool is shared among observations. Alternatively, an integer can be
+#' provided, indicating the size of the genotype pool. Then, a different
+#' genotype pool would be drawn for each observation. This options is used if
+#' \code{sampling} is set to \code{"rejection"}
 #' @param seed seed for reproducibility
 obs.loglikelihood_ <- function(
   obs.events, poset, lambdas, lambda.s, eps, sampling.times=NULL, L=1000,
   sampling=c('forward', 'add-remove', 'rejection'), perturb.prob=0.8,
-  version="3", genotype.pool=NULL, exact=FALSE, seed=NULL) {
+  version="3", genotype.pool=200, exact=FALSE, seed=NULL) {
 
   sampling <- match.arg(sampling)
   if (is.null(seed))
@@ -739,10 +742,15 @@ prob.importance.sampling <- function(
   } else {
     if (sampling == "rejection") {
       if (!is.list(genotype.pool)) {
+        # Draw a different genotype pool every time this function is called
         T_sampling <- NULL
         if (!is.null(sampling.time)) {
-          set.seed(seed)
-          T_sampling <- sample(sampling.time, genotype.pool, replace=TRUE)
+          if (length(sampling.time) > 1) {
+            set.seed(seed)
+            T_sampling <- sample(sampling.time, genotype.pool, replace=TRUE)
+          } else {
+            T_sampling <- rep(sampling.time, genotype.pool)
+          }
         }
         genotype.pool <-
           sample.genotypes(genotype.pool, poset, lambdas, T_sampling,
@@ -1399,18 +1407,13 @@ MCEM.hcbn_ <- function(
 #' \code{"add-remove"} or \code{"rejection"}
 #' @param version an integer indicating which version of the
 #' \code{"add-remove"} sampling scheme to use
-#' @param genotype.pool an optional matrix containing sampled genotypes. This
-#' option is used if \code{sampling} is set to \code{"rejection"}
-#' @param Tdiff.pool Expected time differences for the genotype pool. This
-#' option is used if \code{sampling} is set to \code{"rejection"}
 #' @param lambda.s rate of the sampling process. Defaults to \code{1.0}
 #' @param thrds number of threads for parallel execution
 #' @param seed seed for reproducibility
 obs.loglikelihood <- function(
   obs, poset, lambda, eps, times=NULL, L,
   sampling=c('forward', 'add-remove', 'rejection'), version,
-  genotype.pool=matrix(0L), Tdiff.pool=matrix(0), lambda.s=1.0, thrds=1L,
-  seed=NULL) {
+  lambda.s=1.0, thrds=1L, seed=NULL) {
 
   sampling <- match.arg(sampling)
   N <- nrow(obs)
@@ -1429,15 +1432,10 @@ obs.loglikelihood <- function(
       stop("A vector of length ",  N, " is expected")
   }
 
-  if (!is.logical(genotype.pool))
-    genotype.pool <-
-      matrix(as.logical(genotype.pool), nrow=nrow(genotype.pool),
-             ncol=ncol(genotype.pool))
-
   if (is.null(seed))
     seed <- sample.int(3e4, 1)
 
   .Call("_obs_log_likelihood", PACKAGE = 'mccbn', obs, poset, lambda,
-        eps, times, L, sampling, version, genotype.pool, Tdiff.pool, lambda.s,
-        sampling.times.available, as.integer(thrds), as.integer(seed))
+        eps, times, L, sampling, version, lambda.s, sampling.times.available,
+        as.integer(thrds), as.integer(seed))
 }
