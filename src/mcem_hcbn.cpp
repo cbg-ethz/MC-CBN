@@ -163,9 +163,9 @@ MatrixXb sample_genotypes(
            in_begin != in_end; ++in_begin)
         if (T_events_sum(i, source(*in_begin, model.poset)) > T_max)
           T_max = T_events_sum(i, source(*in_begin, model.poset));
-        T_events_sum(i, *v) = T_events(i, *v) + T_max;
-        if (T_events_sum(i, *v) <= T_sampling(i))
-          obs(i, *v) = true;
+      T_events_sum(i, *v) = T_events(i, *v) + T_max;
+      if (T_events_sum(i, *v) <= T_sampling(i))
+        obs(i, *v) = true;
     }
   }
   return obs;
@@ -182,7 +182,6 @@ double obs_log_likelihood(
   const auto p = poset.rows(); // Number of mutations / events
   const auto N = obs.rows();   // Number of observations / genotypes
   double llhood = 0;
-  unsigned int K = 0;
 
   edge_container edge_list = adjacency_mat2list(poset);
   Model model(edge_list, p, lambda_s);
@@ -193,8 +192,6 @@ double obs_log_likelihood(
     throw not_acyclic_exception();
   } else {
     model.topological_sort();
-    if (sampling == "rejection")
-      K = p * L;
 
     #ifdef _OPENMP
     omp_set_num_threads(thrds);
@@ -203,21 +200,9 @@ double obs_log_likelihood(
 
     #pragma omp parallel for reduction(+:llhood) schedule(static)
     for (unsigned int i = 0; i < N; ++i) {
-      VectorXi dist_pool;
-      MatrixXd Tdiff_pool;
-      if (sampling == "rejection") {
-        Tdiff_pool.resize(K, p);
-        VectorXd T_sampling(K);
-        if (sampling_times_available)
-          T_sampling.setConstant(times(i));
-        MatrixXb genotype_pool = sample_genotypes(
-          K, model, Tdiff_pool, T_sampling, rngs[omp_get_thread_num()],
-          sampling_times_available);
-        dist_pool = hamming_dist_mat(genotype_pool, obs.row(i));
-      }
       DataImportanceSampling importance_sampling = importance_weight(
-        obs.row(i), L, model, times[i], sampling, version, dist_pool,
-        Tdiff_pool, rngs[omp_get_thread_num()], sampling_times_available);
+        obs.row(i), L, model, times[i], sampling, version,
+        rngs[omp_get_thread_num()], sampling_times_available);
       llhood += std::log(importance_sampling.w.sum() / L);
     }
   }
@@ -252,12 +237,10 @@ VectorXi hamming_dist_mat(const MatrixXb& x, const RowVectorXb& y) {
 //' @param model
 //' @param time sampling time
 //' @param sampling variable indicating which proposal to use
-//' @param K number of samples for weighted sampling
 //' @return returns importance weights and (expected) sufficient statistics
 DataImportanceSampling importance_weight(
     const RowVectorXb& genotype, const unsigned int L, const Model& model,
     const double time, const std::string& sampling, const unsigned int version,
-    const VectorXi& dist_pool, const MatrixXd& Tdiff_pool,
     Context::rng_type& rng, const bool sampling_times_available=false) {
 
   // Initialization and instantiation of variables
@@ -283,6 +266,16 @@ DataImportanceSampling importance_weight(
   } else if (sampling == "add-remove") {
     //TODO
   } else if (sampling == "rejection") {
+    unsigned int K = p * L;
+    MatrixXd Tdiff_pool(K, p);
+    VectorXd T_sampling(K);
+    if (sampling_times_available)
+      T_sampling.setConstant(time);
+
+    MatrixXb genotype_pool = sample_genotypes(K, model, Tdiff_pool, T_sampling,
+                                              rng, sampling_times_available);
+    VectorXi dist_pool = hamming_dist_mat(genotype_pool, genotype);
+
     VectorXd d_pool = dist_pool.cast<double>();
     VectorXd q_prob = pow(model.get_epsilon(), d_pool.array()) *
       pow(1 - model.get_epsilon(), p - d_pool.array());
@@ -331,7 +324,7 @@ double MCEM_hcbn(
   const vertices_size_type p = model.size(); // Number of mutations / events
   const unsigned int N = obs.rows();         // Number of observations / genotypes
   float W = weights.sum();                   // Number of (weighted) observations
-  unsigned int K = 0;
+
   unsigned int update_step_size = control_EM.update_step_size;
   VectorXd avg_lambda = VectorXd::Zero(p);
   VectorXd avg_lambda_current = VectorXd::Zero(p);
@@ -342,7 +335,7 @@ double MCEM_hcbn(
   MatrixXd expected_Tdiff(N, p);
   VectorXd Tdiff_colsum(p);
 
-  if (sampling == "rejection") {
+  /*if (sampling == "rejection") {
     // if (p < 19) {
     //   K = std::max((unsigned int) pow(2, p + 1), 2 * L);
     // } else {
@@ -352,7 +345,7 @@ double MCEM_hcbn(
     K = p * L;
     if (ctx.get_verbose())
       std::cout << "Size of the genotype pool: " << K << std::endl;
-  }
+  }*/
 
   if (ctx.get_verbose()) {
     std::cout << "Initial value of the error rate - epsilon: "
@@ -396,20 +389,8 @@ double MCEM_hcbn(
 
     #pragma omp parallel for schedule(static)
     for (unsigned int i = 0; i < N; ++i) {
-      VectorXi d_pool;
-      MatrixXd Tdiff_pool;
-      if (sampling == "rejection") {
-        Tdiff_pool.resize(K, p);
-        VectorXd T_sampling(K);
-        if (sampling_times_available)
-          T_sampling.setConstant(times(i));
-        MatrixXb genotype_pool = sample_genotypes(
-          K, model, Tdiff_pool, T_sampling, rngs[omp_get_thread_num()],
-          sampling_times_available);
-        d_pool = hamming_dist_mat(genotype_pool, obs.row(i));
-      }
       DataImportanceSampling importance_sampling = importance_weight(
-        obs.row(i), L, model, times(i), sampling, version, d_pool, Tdiff_pool,
+        obs.row(i), L, model, times(i), sampling, version,
         rngs[omp_get_thread_num()], sampling_times_available);
 
       expected_dist(i) =
@@ -577,8 +558,7 @@ RcppExport SEXP _MCEM_hcbn(
 RcppExport SEXP _importance_weight_genotype(
     SEXP genotypeSEXP, SEXP LSEXP, SEXP posetSEXP, SEXP lambdaSEXP,
     SEXP epsSEXP, SEXP timeSEXP, SEXP samplingSEXP, SEXP versionSEXP,
-    SEXP d_poolSEXP, SEXP Tdiff_poolSEXP, SEXP lambda_sSEXP,
-    SEXP sampling_times_availableSEXP, SEXP seedSEXP) {
+    SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP, SEXP seedSEXP) {
 
   try {
     // Convert input to C++ types
@@ -590,8 +570,6 @@ RcppExport SEXP _importance_weight_genotype(
     const double time = as<double>(timeSEXP);
     const std::string& sampling = as<std::string>(samplingSEXP);
     const unsigned int version = as<unsigned int>(versionSEXP);
-    const MapVeci d_pool(as<MapVeci>(d_poolSEXP));
-    const MapMatd Tdiff_pool(as<MapMatd>(Tdiff_poolSEXP));
     const float lambda_s = as<float>(lambda_sSEXP);
     const bool sampling_times_available = as<bool>(sampling_times_availableSEXP);
     const int seed = as<int>(seedSEXP);
@@ -609,7 +587,7 @@ RcppExport SEXP _importance_weight_genotype(
     // Call the underlying C++ function
     Context ctx(seed);
     DataImportanceSampling w = importance_weight(
-      genotype, L, M, time, sampling, version, d_pool, Tdiff_pool, ctx.rng,
+      genotype, L, M, time, sampling, version, ctx.rng,
       sampling_times_available);
 
     // Return the result as a SEXP
@@ -643,7 +621,6 @@ RcppExport SEXP _importance_weight(
 
     const unsigned int N = obs.rows(); // Number of observations / genotypes
     const auto p = poset.rows();       // Number of mutations / events
-    unsigned int K = 0;
 
     VectorXd w_sum(N);
     VectorXd expected_dist(N);
@@ -659,9 +636,6 @@ RcppExport SEXP _importance_weight(
 
     Context ctx(seed);
 
-    if (sampling == "rejection")
-      K = p * L;
-
     #ifdef _OPENMP
     omp_set_num_threads(thrds);
     #endif
@@ -669,22 +643,9 @@ RcppExport SEXP _importance_weight(
 
     #pragma omp parallel for schedule(static)
     for (unsigned int i = 0; i < N; ++i) {
-      VectorXi d_pool;
-      MatrixXd Tdiff_pool;
-      if (sampling == "rejection") {
-        Tdiff_pool.resize(K, p);
-        VectorXd T_sampling(K);
-        if (sampling_times_available)
-          T_sampling.setConstant(times(i));
-        MatrixXb genotype_pool = sample_genotypes(
-          K, M, Tdiff_pool, T_sampling, rngs[omp_get_thread_num()],
-          sampling_times_available);
-        d_pool = hamming_dist_mat(genotype_pool, obs.row(i));
-      }
-
       // Call the underlying C++ function
       DataImportanceSampling w = importance_weight(
-        obs.row(i), L, M, times(i), sampling, version, d_pool, Tdiff_pool,
+        obs.row(i), L, M, times(i), sampling, version,
         rngs[omp_get_thread_num()], sampling_times_available);
 
       w_sum[i] = w.w.sum();
