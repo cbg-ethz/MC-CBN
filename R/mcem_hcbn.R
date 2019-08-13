@@ -105,22 +105,15 @@ MCEM.hcbn <- function(
 #' genotypes according to current rate parameters and sample \code{K}
 #' observations proportional to the Hamming distance
 #' @param version an integer indicating which version of the
-#' \code{"add-remove"} sampling scheme to use.
-#' @param dist.pool Hamming distance between \code{genotype} and the genotype
-#' pool. This option is used if \code{sampling} is set to \code{"rejection"}
-#' and \code{genotype} corresponds to a vector containing a single genotype
-#' @param Tdiff.pool Expected time differences for the genotype pool. This
-#' option is used if \code{sampling} is set to \code{"rejection"} and
-#' \code{genotype} corresponds to a vector containing a single genotype
+#' \code{"add-remove"} sampling scheme to use
 #' @param lambda.s rate of the sampling process. Defaults to \code{1.0}
 #' @param thrds number of threads for parallel execution. This option is used
 #' if \code{genotype} corresponds to a matrix of genotypes
 #' @param seed seed for reproducibility
 importance.weight <- function(
   genotype, L, poset, lambda, eps, time=NULL,
-  sampling=c('forward', 'add-remove', 'rejection'), version=NULL,
-  dist.pool=integer(0), Tdiff.pool=matrix(0), lambda.s=1.0, thrds=1L,
-  seed=NULL) {
+  sampling=c('forward', 'add-remove', 'rejection'), version=NULL, lambda.s=1.0,
+  thrds=1L, seed=NULL) {
 
   sampling <- match.arg(sampling)
   if (is.matrix(genotype))
@@ -149,12 +142,6 @@ importance.weight <- function(
   else if (!is.integer(version))
     version <- as.integer(version)
 
-  if (!is.integer(dist.pool))
-    dist.pool <- as.integer(dist.pool)
-
-  if (is.null(Tdiff.pool))
-    Tdiff.pool <- matrix(0)
-
   if (is.null(seed))
     seed <- sample.int(3e4, 1)
 
@@ -164,7 +151,7 @@ importance.weight <- function(
           as.integer(thrds),  as.integer(seed))
   else
     .Call('_importance_weight_genotype', PACKAGE = 'mccbn', genotype, L, poset,
-          lambda, eps, time, sampling, version, dist.pool, Tdiff.pool, lambda.s,
+          lambda, eps, time, sampling, version, lambda.s,
           sampling.times.available, as.integer(seed))
 }
 

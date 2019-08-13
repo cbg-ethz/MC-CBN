@@ -91,17 +91,11 @@ complete.loglikelihood_ <- function(lambdas, eps, Tdiff, dist) {
 #' @param sampling.times an optional vector of sampling times per observation
 #' @param L number of samples to be drawn from the proposal. Defaults to
 #' \code{1000}
-#' @param genotype.pool an optional list containing sampled genotypes and
-#' corresponding occurrence times. If this option is provided, the same
-#' genotype pool is shared among observations. Alternatively, an integer can be
-#' provided, indicating the size of the genotype pool. Then, a different
-#' genotype pool would be drawn for each observation. This options is used if
-#' \code{sampling} is set to \code{"rejection"}
 #' @param seed seed for reproducibility
 obs.loglikelihood_ <- function(
   obs.events, poset, lambdas, lambda.s, eps, sampling.times=NULL, L=1000,
   sampling=c('forward', 'add-remove', 'rejection'), perturb.prob=0.8,
-  version="3", genotype.pool=200, exact=FALSE, seed=NULL) {
+  version="3", exact=FALSE, seed=NULL) {
 
   sampling <- match.arg(sampling)
   if (is.null(seed))
@@ -131,7 +125,7 @@ obs.loglikelihood_ <- function(
           genotype=obs.events[i, ], L=L, poset=poset, lambdas=lambdas,
           lambda.s=lambda.s, eps=eps, sampling.time=sampling.times[i],
           sampling=sampling, perturb.prob=perturb.prob, version=version,
-          genotype.pool=genotype.pool, seed=seeds[i])
+          seed=seeds[i])
       return(prob)
     }
 
@@ -722,13 +716,10 @@ importance.weight_ <- function(
 #' to the observed genotype
 #'
 #' @inheritParams importance.weight_
-#' @param genotype.pool an optional list containing sampled genotypes and their
-#' corresponding occurrence times. Otherwise, the size of the genotype pool.
-#' This option is used if \code{sampling} is set to \code{"rejection"}
 prob.importance.sampling <- function(
   genotype, L, poset, lambdas, lambda.s, eps, sampling.time=NULL,
   sampling=c('forward', 'add-remove', 'rejection'), perturb.prob=0.8,
-  version="3", genotype.pool=200, seed=NULL) {
+  version="3", seed=NULL) {
 
   sampling <- match.arg(sampling)
   if (is.null(seed))
@@ -740,34 +731,9 @@ prob.importance.sampling <- function(
                          sampling.time=sampling.time, sampling=sampling,
                          perturb.prob=perturb.prob, version=version, seed=seed)
   } else {
-    if (sampling == "rejection") {
-      if (!is.list(genotype.pool)) {
-        # Draw a different genotype pool every time this function is called
-        T_sampling <- NULL
-        if (!is.null(sampling.time)) {
-          if (length(sampling.time) > 1) {
-            set.seed(seed)
-            T_sampling <- sample(sampling.time, genotype.pool, replace=TRUE)
-          } else {
-            T_sampling <- rep(sampling.time, genotype.pool)
-          }
-        }
-        genotype.pool <-
-          sample.genotypes(genotype.pool, poset, lambdas, T_sampling,
-                           lambda.s, seed)
-      }
-      dist.pool <- apply(genotype.pool$samples, 1, hamming.dist, y=genotype)
-      Tdiff.pool <- genotype.pool$Tdiff
-      # sampling times are not used if sampling is set to rejection
-      sampling.time <- NULL
-    } else {
-      dist.pool <- integer(0)
-      Tdiff.pool <- matrix(0)
-    }
     probs <-
       importance.weight(genotype, L, poset, lambdas, eps, time=sampling.time,
-                        sampling=sampling, version=version, dist.pool=dist.pool,
-                        Tdiff.pool=Tdiff.pool, lambda.s=lambda.s,
+                        sampling=sampling, version=version, lambda.s=lambda.s,
                         seed=as.integer(seed))
   }
   probs <- probs$w
@@ -839,9 +805,6 @@ dist.importance.sampling <- function(
 #' \code{0.8}
 #' @param version an optional agrument indicating which version of the
 #' \code{"add-remove"} sampling scheme to use. Defaults to \code{3}
-#' @param genotype.pool an optional list containing sampled genotypes and their
-#' corresponding occurrence times. Otherwise the size of the genotype pool.
-#' This option is used if \code{sampling} is set to \code{"rejection"}
 #' @param outdir an optional argument indicating the path to the output
 #' directory
 #' @param outname an optional argument indicating the suffix to include in the
@@ -852,8 +815,8 @@ dist.importance.sampling <- function(
 prob.empirical_vs_sampling <- function(
   events, L, poset, lambdas, lambda.s, eps, rep=NULL, one.genotype=FALSE,
   sampling.times=NULL, sampling=c('forward', 'add-remove', 'rejection'),
-  perturb.prob=0.8, version="3", genotype.pool=200, outdir=NULL, outname="",
-  binwidth=0.01, seed=NULL) {
+  perturb.prob=0.8, version="3", outdir=NULL, outname="", binwidth=0.01,
+  seed=NULL) {
 
   sampling <- match.arg(sampling)
   if (is.null(seed))
@@ -887,7 +850,7 @@ prob.empirical_vs_sampling <- function(
       prob.importance.sampling(genotype, L, poset, lambdas, lambda.s, eps=eps,
                                sampling.time=sampling.time, sampling=sampling,
                                perturb.prob=perturb.prob, version=version,
-                               genotype.pool=genotype.pool, seed=seeds[i])
+                               seed=seeds[i])
     return(c(prob.empirical, prob.sampling))
   }
 
@@ -1412,8 +1375,8 @@ MCEM.hcbn_ <- function(
 #' @param seed seed for reproducibility
 obs.loglikelihood <- function(
   obs, poset, lambda, eps, times=NULL, L,
-  sampling=c('forward', 'add-remove', 'rejection'), version,
-  lambda.s=1.0, thrds=1L, seed=NULL) {
+  sampling=c('forward', 'add-remove', 'rejection'), version, lambda.s=1.0,
+  thrds=1L, seed=NULL) {
 
   sampling <- match.arg(sampling)
   N <- nrow(obs)
