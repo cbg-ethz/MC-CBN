@@ -119,13 +119,19 @@ obs.loglikelihood_ <- function(
     #   llhood <- llhood + (N - mutated) * log((1-eps) * Pr_X_0 + eps * Pr_X_1)
     # }
   } else {
+    if (sampling == "rejection") {
+      K <- p * L;
+      rejection.pool <- sample.times(K, poset, lambdas, seed=seed)
+    } else {
+      rejection.pool <- NULL
+    }
     prob_Y <- foreach(i=1:N, .combine='c', .packages="mccbn") %dopar% {
       prob <-
         prob.importance.sampling(
           genotype=obs.events[i, ], L=L, poset=poset, lambdas=lambdas,
           lambda.s=lambda.s, eps=eps, sampling.time=sampling.times[i],
           sampling=sampling, perturb.prob=perturb.prob, version=version,
-          seed=seeds[i])
+          rejection.pool=rejection.pool, seed=seeds[i])
       return(prob)
     }
 
@@ -716,10 +722,13 @@ importance.weight_ <- function(
 #' to the observed genotype
 #'
 #' @inheritParams importance.weight_
+#' @param rejection.pool an optional list containing mutation times and
+#' occurrence (cumulative mutation) times. Otherwise the size of the pool. This
+#' option is used if \code{sampling} is set to \code{"rejection"}
 prob.importance.sampling <- function(
   genotype, L, poset, lambdas, lambda.s, eps, sampling.time=NULL,
   sampling=c('forward', 'add-remove', 'rejection'), perturb.prob=0.8,
-  version="3", seed=NULL) {
+  version="3", rejection.pool=200, seed=NULL) {
 
   sampling <- match.arg(sampling)
   if (is.null(seed))
@@ -731,9 +740,29 @@ prob.importance.sampling <- function(
                          sampling.time=sampling.time, sampling=sampling,
                          perturb.prob=perturb.prob, version=version, seed=seed)
   } else {
+    dist.pool <- integer(0)
+    Tdiff.pool <- matrix(0)
+    if (sampling == "rejection") {
+      if (is.numeric(rejection.pool)) {
+        K <- rejection.pool
+        rejection.pool <- sample.times(K, poset, lambdas, seed=seed)
+      }
+
+      # NOTE: A new seed is required, to restart draws of the
+      #       'std::exponential_distribution'
+      set.seed(seed)
+      new.seed <- sample.int(3e4, 1)
+      genotype.pool <-
+        generate.genotypes(rejection.pool$mutation_times, poset,
+                           sampling.time=sampling.time, lambda.s=lambda.s,
+                           seed=new.seed)
+      dist.pool <- apply(genotype.pool$samples, 1, hamming.dist, y=genotype)
+      Tdiff.pool <- rejection.pool$Tdiff
+    }
     probs <-
       importance.weight(genotype, L, poset, lambdas, eps, time=sampling.time,
-                        sampling=sampling, version=version, lambda.s=lambda.s,
+                        sampling=sampling, version=version, dist.pool=dist.pool,
+                        Tdiff.pool=Tdiff.pool, lambda.s=lambda.s,
                         seed=as.integer(seed))
   }
   probs <- probs$w
@@ -805,6 +834,9 @@ dist.importance.sampling <- function(
 #' \code{0.8}
 #' @param version an optional agrument indicating which version of the
 #' \code{"add-remove"} sampling scheme to use. Defaults to \code{3}
+#' @param rejection.pool an optional list containing mutation times and
+#' occurrence (cumulative mutation) times. Otherwise the size of the pool. This
+#' option is used if \code{sampling} is set to \code{"rejection"}
 #' @param outdir an optional argument indicating the path to the output
 #' directory
 #' @param outname an optional argument indicating the suffix to include in the
@@ -815,8 +847,8 @@ dist.importance.sampling <- function(
 prob.empirical_vs_sampling <- function(
   events, L, poset, lambdas, lambda.s, eps, rep=NULL, one.genotype=FALSE,
   sampling.times=NULL, sampling=c('forward', 'add-remove', 'rejection'),
-  perturb.prob=0.8, version="3", outdir=NULL, outname="", binwidth=0.01,
-  seed=NULL) {
+  perturb.prob=0.8, version="3", rejection.pool=200, outdir=NULL, outname="",
+  binwidth=0.01, seed=NULL) {
 
   sampling <- match.arg(sampling)
   if (is.null(seed))
@@ -826,7 +858,7 @@ prob.empirical_vs_sampling <- function(
   seeds <- sample.int(3e4, N)
 
   if (one.genotype) {
-    if (length(sampling.times) > 1 && sampling != 'rejection') {
+    if (length(sampling.times) > 1) {
       warning("Only one sampling time was expected. First entry of vector ",
               "\'sampling.times\' is used.")
       sampling.times <- sampling.times[1]
@@ -850,7 +882,7 @@ prob.empirical_vs_sampling <- function(
       prob.importance.sampling(genotype, L, poset, lambdas, lambda.s, eps=eps,
                                sampling.time=sampling.time, sampling=sampling,
                                perturb.prob=perturb.prob, version=version,
-                               seed=seeds[i])
+                               rejection.pool=rejection.pool, seed=seeds[i])
     return(c(prob.empirical, prob.sampling))
   }
 
