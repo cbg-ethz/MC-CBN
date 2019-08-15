@@ -6,7 +6,8 @@
 \usage{
 importance.weight(genotype, L, poset, lambda, eps, time = NULL,
   sampling = c("forward", "add-remove", "rejection"), version = NULL,
-  lambda.s = 1, thrds = 1L, seed = NULL)
+  dist.pool = integer(0), Tdiff.pool = matrix(0), lambda.s = 1,
+  thrds = 1L, seed = NULL)
 }
 \arguments{
 \item{genotype}{either a binary vector or a matrix containing observations
@@ -36,6 +37,14 @@ observations proportional to the Hamming distance}
 
 \item{version}{an integer indicating which version of the
 \code{"add-remove"} sampling scheme to use}
+
+\item{dist.pool}{Hamming distance between \code{genotype} and the genotype
+pool. This option is used if \code{sampling} is set to \code{"rejection"}
+and \code{genotype} corresponds to a vector containing a single genotype}
+
+\item{Tdiff.pool}{Expected time differences for the genotype pool. This
+option is used if \code{sampling} is set to \code{"rejection"} and
+\code{genotype} corresponds to a vector containing a single genotype}
 
 \item{lambda.s}{rate of the sampling process. Defaults to \code{1.0}}
 

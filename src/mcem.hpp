@@ -184,6 +184,7 @@ public:
 DataImportanceSampling importance_weight(
     const RowVectorXb& genotype, const unsigned int L, const Model& model,
     const double time, const std::string& sampling, const unsigned int version,
+    const VectorXi& dist_pool, const MatrixXd& Tdiff_pool,
     Context::rng_type& rng, const bool sampling_times_available);
 
 VectorXi hamming_dist_mat(const MatrixXb &x, const RowVectorXb &y);
