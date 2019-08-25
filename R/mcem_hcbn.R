@@ -106,6 +106,9 @@ MCEM.hcbn <- function(
 #' observations proportional to the Hamming distance
 #' @param version an integer indicating which version of the
 #' \code{"add-remove"} sampling scheme to use
+#' @param weight.remove a numeric vector of length \code{p} containing the
+#' weights for choosing events to be removed. This option is used if
+#' \code{sampling} is set to \code{"add-remove"}
 #' @param dist.pool Hamming distance between \code{genotype} and the genotype
 #' pool. This option is used if \code{sampling} is set to \code{"rejection"}
 #' and \code{genotype} corresponds to a vector containing a single genotype
@@ -119,8 +122,8 @@ MCEM.hcbn <- function(
 importance.weight <- function(
   genotype, L, poset, lambda, eps, time=NULL,
   sampling=c('forward', 'add-remove', 'rejection'), version=NULL,
-  dist.pool=integer(0), Tdiff.pool=matrix(0), lambda.s=1.0, thrds=1L,
-  seed=NULL) {
+  weight.remove=numeric(0), dist.pool=integer(0), Tdiff.pool=matrix(0),
+  lambda.s=1.0, thrds=1L, seed=NULL) {
 
   sampling <- match.arg(sampling)
   if (is.matrix(genotype))
@@ -164,26 +167,6 @@ importance.weight <- function(
           as.integer(thrds),  as.integer(seed))
   else
     .Call('_importance_weight_genotype', PACKAGE = 'mccbn', genotype, L, poset,
-          lambda, eps, time, sampling, version, dist.pool, Tdiff.pool,
-          lambda.s, sampling.times.available, as.integer(seed))
-}
-
-#' @title Complete-data Log-Likelihood
-#' @export
-#'
-#' @description compute the complete-data log-likelihood or, equivalently, the
-#' hidden log-likelihood
-#'
-#' @param lambda a vector of the rate parameters
-#' @param eps error rate, \eqn{\epsilon}
-#' @param Tdiff a matrix of expected time differences
-#' @param dist a vector of expected Hamming distances
-#' @param W sum of weighted observations
-complete.loglikelihood <- function(lambda, eps, Tdiff, dist, W=NULL) {
-
-  if (is.null(W))
-    W <- length(Tdiff)
-
-  .Call('_complete_log_likelihood', PACKAGE = 'mccbn', lambda, eps, Tdiff, dist,
-        W)
+          lambda, eps, time, sampling, version, weight.remove, dist.pool,
+          Tdiff.pool, lambda.s, sampling.times.available, as.integer(seed))
 }

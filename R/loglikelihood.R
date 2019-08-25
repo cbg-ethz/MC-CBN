@@ -1,0 +1,69 @@
+#' @title Observed Log-Likelihood
+#' @export 
+#'
+#' @description compute the observed log-likelihood
+#'
+#' @param obs a matrix containing observations or genotypes, where each row
+#' correponds to a genotype vector whose entries indicate whether an event has
+#' been observed (\code{1}) or not (\code{0})
+#' @param poset a matrix containing the cover relations
+#' @param lambda a vector of the rate parameters
+#' @param eps error rate
+#' @param times an optional vector of sampling times per observation
+#' @param L number of samples to be drawn from the proposal
+#' @param sampling type of sampling scheme. OPTIONS: \code{"forward"},
+#' \code{"add-remove"} or \code{"rejection"}
+#' @param version an integer indicating which version of the
+#' \code{"add-remove"} sampling scheme to use
+#' @param lambda.s rate of the sampling process. Defaults to \code{1.0}
+#' @param thrds number of threads for parallel execution
+#' @param seed seed for reproducibility
+obs.loglikelihood <- function(
+  obs, poset, lambda, eps, times=NULL, L,
+  sampling=c('forward', 'add-remove', 'rejection'), version, lambda.s=1.0,
+  thrds=1L, seed=NULL) {
+  
+  sampling <- match.arg(sampling)
+  N <- nrow(obs)
+  if (!is.integer(poset))
+    poset <- matrix(as.integer(poset), nrow=nrow(poset), ncol=ncol(poset))
+  
+  if (!is.integer(obs))
+    obs <- matrix(as.integer(obs), nrow=N, ncol=ncol(obs))
+  
+  if (is.null(times)) {
+    times <- numeric(N)
+    sampling.times.available <- FALSE
+  } else {
+    sampling.times.available <- TRUE
+    if (length(times) != N)
+      stop("A vector of length ",  N, " is expected")
+  }
+  
+  if (is.null(seed))
+    seed <- sample.int(3e4, 1)
+  
+  .Call("_obs_log_likelihood", PACKAGE = 'mccbn', obs, poset, lambda,
+        eps, times, L, sampling, version, lambda.s, sampling.times.available,
+        as.integer(thrds), as.integer(seed))
+}
+
+#' @title Complete-data Log-Likelihood
+#' @export
+#'
+#' @description compute the complete-data log-likelihood or, equivalently, the
+#' hidden log-likelihood
+#'
+#' @param lambda a vector of the rate parameters
+#' @param eps error rate, \eqn{\epsilon}
+#' @param Tdiff a matrix of expected time differences
+#' @param dist a vector of expected Hamming distances
+#' @param W sum of weighted observations
+complete.loglikelihood <- function(lambda, eps, Tdiff, dist, W=NULL) {
+  
+  if (is.null(W))
+    W <- length(Tdiff)
+  
+  .Call('_complete_log_likelihood', PACKAGE = 'mccbn', lambda, eps, Tdiff, dist,
+        W)
+}

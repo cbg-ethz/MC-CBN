@@ -119,11 +119,14 @@ obs.loglikelihood_ <- function(
     #   llhood <- llhood + (N - mutated) * log((1-eps) * Pr_X_0 + eps * Pr_X_1)
     # }
   } else {
-    if (sampling == "rejection") {
+    rejection.pool <- NULL
+    weight.remove <- numeric(0)
+    if (sampling == "add-remove") {
+      weight.remove <- .Call("_scale_path_to_mutation",
+                             matrix(as.integer(poset), nrow=p, ncol=p), lambdas)
+    } else if (sampling == "rejection") {
       K <- p * L;
       rejection.pool <- sample.times(K, poset, lambdas, seed=seed)
-    } else {
-      rejection.pool <- NULL
     }
     prob_Y <- foreach(i=1:N, .combine='c', .packages="mccbn") %dopar% {
       prob <-
@@ -131,7 +134,8 @@ obs.loglikelihood_ <- function(
           genotype=obs.events[i, ], L=L, poset=poset, lambdas=lambdas,
           lambda.s=lambda.s, eps=eps, sampling.time=sampling.times[i],
           sampling=sampling, perturb.prob=perturb.prob, version=version,
-          rejection.pool=rejection.pool, seed=seeds[i])
+          weight.remove=weight.remove, rejection.pool=rejection.pool,
+          seed=seeds[i])
       return(prob)
     }
 
@@ -722,19 +726,22 @@ importance.weight_ <- function(
 #' to the observed genotype
 #'
 #' @inheritParams importance.weight_
+#' @param weight.remove a numeric vector of length \code{p} containing the
+#' weights for choosing events to be removed. This option is used if
+#' \code{sampling} is set to \code{"add-remove"}
 #' @param rejection.pool an optional list containing mutation times and
 #' occurrence (cumulative mutation) times. Otherwise the size of the pool. This
 #' option is used if \code{sampling} is set to \code{"rejection"}
 prob.importance.sampling <- function(
   genotype, L, poset, lambdas, lambda.s, eps, sampling.time=NULL,
   sampling=c('forward', 'add-remove', 'rejection'), perturb.prob=0.8,
-  version="3", rejection.pool=200, seed=NULL) {
+  version="3", weight.remove=numeric(0), rejection.pool=200, seed=NULL) {
 
   sampling <- match.arg(sampling)
   if (is.null(seed))
     seed <- sample.int(3e4, 1)
 
-  if (sampling == "add-remove") {
+  if (sampling == "add-remove" & version != "4") {
     probs <-
       importance.weight_(genotype, L, poset, lambdas, lambda.s, eps,
                          sampling.time=sampling.time, sampling=sampling,
@@ -761,7 +768,8 @@ prob.importance.sampling <- function(
     }
     probs <-
       importance.weight(genotype, L, poset, lambdas, eps, time=sampling.time,
-                        sampling=sampling, version=version, dist.pool=dist.pool,
+                        sampling=sampling, version=version,
+                        weight.remove=weight.remove, dist.pool=dist.pool,
                         Tdiff.pool=Tdiff.pool, lambda.s=lambda.s,
                         seed=as.integer(seed))
   }
@@ -870,6 +878,12 @@ prob.empirical_vs_sampling <- function(
     N <- nrow(events)
   }
 
+  if (sampling == "add-remove")
+    weight.remove <- .Call("_scale_path_to_mutation",
+                           matrix(as.integer(poset), nrow=p, ncol=p), lambdas)
+  else
+    weight.remove <- numeric(0)
+
   probs <- foreach(i=1:N, .combine='rbind', .packages="mccbn") %dopar% {
     if (!one.genotype) {
       genotype <- events[i, ]
@@ -882,6 +896,7 @@ prob.empirical_vs_sampling <- function(
       prob.importance.sampling(genotype, L, poset, lambdas, lambda.s, eps=eps,
                                sampling.time=sampling.time, sampling=sampling,
                                perturb.prob=perturb.prob, version=version,
+                               weight.remove=weight.remove,
                                rejection.pool=rejection.pool, seed=seeds[i])
     return(c(prob.empirical, prob.sampling))
   }
@@ -1385,52 +1400,4 @@ MCEM.hcbn_ <- function(
   return(list("lambdas"=lambdas, "eps"=eps, "llhood"=llhood,
               "avg.lambdas"=avg.lambdas, "avg.eps"=avg.eps,
               "avg.llhood"=avg.llhood))
-}
-
-#' @title Observed Log-Likelihood
-#' @description compute the observed log-likelihood
-#'
-#' @param obs a matrix containing observations or genotypes, where each row
-#' correponds to a genotype vector whose entries indicate whether an event has
-#' been observed (\code{1}) or not (\code{0})
-#' @param poset a matrix containing the cover relations
-#' @param lambda a vector of the rate parameters
-#' @param eps error rate
-#' @param times an optional vector of sampling times per observation
-#' @param L number of samples to be drawn from the proposal
-#' @param sampling type of sampling scheme. OPTIONS: \code{"forward"},
-#' \code{"add-remove"} or \code{"rejection"}
-#' @param version an integer indicating which version of the
-#' \code{"add-remove"} sampling scheme to use
-#' @param lambda.s rate of the sampling process. Defaults to \code{1.0}
-#' @param thrds number of threads for parallel execution
-#' @param seed seed for reproducibility
-obs.loglikelihood <- function(
-  obs, poset, lambda, eps, times=NULL, L,
-  sampling=c('forward', 'add-remove', 'rejection'), version, lambda.s=1.0,
-  thrds=1L, seed=NULL) {
-
-  sampling <- match.arg(sampling)
-  N <- nrow(obs)
-  if (!is.integer(poset))
-    poset <- matrix(as.integer(poset), nrow=nrow(poset), ncol=ncol(poset))
-
-  if (!is.integer(obs))
-    obs <- matrix(as.integer(obs), nrow=N, ncol=ncol(obs))
-
-  if (is.null(times)) {
-    times <- numeric(N)
-    sampling.times.available <- FALSE
-  } else {
-    sampling.times.available <- TRUE
-    if (length(times) != N)
-      stop("A vector of length ",  N, " is expected")
-  }
-
-  if (is.null(seed))
-    seed <- sample.int(3e4, 1)
-
-  .Call("_obs_log_likelihood", PACKAGE = 'mccbn', obs, poset, lambda,
-        eps, times, L, sampling, version, lambda.s, sampling.times.available,
-        as.integer(thrds), as.integer(seed))
 }
