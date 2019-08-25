@@ -27,6 +27,7 @@ typedef Eigen::Matrix<bool, 1, Eigen::Dynamic> RowVectorXb;
 typedef Map<VectorXd> MapVecd;
 typedef Map<VectorXi> MapVeci;
 typedef Map<MatrixXi> MapMati;
+typedef Map<MatrixXd> MapMatd;
 typedef Map<RowVectorXd> MapRowVecd;
 typedef boost::adjacency_list<boost::hash_setS, boost::vecS, boost::bidirectionalS> Poset;
 typedef boost::graph_traits<Poset>::vertices_size_type vertices_size_type;
@@ -46,7 +47,7 @@ public:
     _set_seed(rng, seed);
   }
 
-  bool get_verbose() const {
+  inline bool get_verbose() const {
     return _verbose;
   }
 
@@ -111,7 +112,7 @@ public:
   _lambda_s(m.get_lambda_s()), _epsilon(m.get_epsilon()),
   _llhood(m.get_llhood()), _size(m.size()) {}
 
-  vertices_size_type size() const;
+  inline vertices_size_type size() const;
 
   void set_lambda(const Eigen::Ref<const VectorXd>& lambda);
 
@@ -122,15 +123,15 @@ public:
 
   void set_llhood(const double llhood);
 
-  VectorXd get_lambda() const;
+  inline VectorXd get_lambda() const;
 
-  double get_lambda(const unsigned int idx) const;
+  inline double get_lambda(const unsigned int idx) const;
 
-  float get_lambda_s() const;
+  inline float get_lambda_s() const;
 
-  double get_epsilon() const;
+  inline double get_epsilon() const;
 
-  double get_llhood() const;
+  inline double get_llhood() const;
 
   void has_cycles();
 
@@ -181,11 +182,36 @@ public:
     max_lambda(max_lambda) {}
 };
 
+vertices_size_type Model::size() const {
+  return _size;
+}
+
+VectorXd Model::get_lambda() const {
+  return _lambda;
+}
+
+double Model::get_lambda(const unsigned int idx) const {
+  return _lambda[idx];
+}
+
+float Model::get_lambda_s() const {
+  return _lambda_s;
+}
+
+double Model::get_epsilon() const {
+  return _epsilon;
+}
+
+double Model::get_llhood() const {
+  return _llhood;
+}
+
 DataImportanceSampling importance_weight(
     const RowVectorXb& genotype, const unsigned int L, const Model& model,
     const double time, const std::string& sampling, const unsigned int version,
-    const VectorXi& dist_pool, const MatrixXd& Tdiff_pool,
-    Context::rng_type& rng, const bool sampling_times_available);
+    const VectorXd& scale_cumulative, const VectorXi& dist_pool,
+    const MatrixXd& Tdiff_pool, Context::rng_type& rng,
+    const bool sampling_times_available);
 
 VectorXi hamming_dist_mat(const MatrixXb &x, const RowVectorXb &y);
 
@@ -208,6 +234,9 @@ bool is_compatible(const RowVectorXb& genotype, const Model& model);
 
 int num_compatible_observations(const MatrixXb& obs, const Model& poset,
                                 const unsigned int N);
+
+VectorXd rexp_std(const unsigned int N, const double lambda,
+                  Context::rng_type& rng);
 
 void handle_exceptions();
 

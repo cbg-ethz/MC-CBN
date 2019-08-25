@@ -13,10 +13,6 @@
 #include <boost/graph/transitive_closure.hpp>
 #include <vector>
 
-vertices_size_type Model::size() const {
-  return _size;
-}
-
 void Model::set_lambda(const Eigen::Ref<const VectorXd>& lambda) {
   _lambda = lambda;
 }
@@ -34,26 +30,6 @@ void Model::set_epsilon(const double eps) {
 
 void Model::set_llhood(const double llhood) {
   _llhood = llhood;
-}
-
-VectorXd Model::get_lambda() const {
-  return _lambda;
-}
-
-double Model::get_lambda(const unsigned int idx) const {
-  return _lambda[idx];
-}
-
-float Model::get_lambda_s() const {
-  return _lambda_s;
-}
-
-double Model::get_epsilon() const {
-  return _epsilon;
-}
-
-double Model::get_llhood() const {
-  return _llhood;
 }
 
 void Model::has_cycles() {

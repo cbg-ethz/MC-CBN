@@ -8,6 +8,7 @@
 #include <Rcpp.h>
 #include <RcppEigen.h>
 #include "mcem.hpp"
+#include "add_remove.hpp"
 #include "not_acyclic_exception.hpp"
 #include <boost/graph/graph_traits.hpp>
 #include <random>
@@ -18,7 +19,6 @@
 #endif
 
 using namespace Rcpp;
-typedef Map<MatrixXd> MapMatd;
 
 class Initializer {
 public:
@@ -253,9 +253,13 @@ double obs_log_likelihood(
     model.topological_sort();
 
     unsigned int K = 0;
+    VectorXd scale_cumulative;
     MatrixXd Tdiff_pool;
     MatrixXd T_pool;
-    if (sampling == "rejection") {
+    if (sampling == "add-remove") {
+      scale_cumulative.resize(p);
+      scale_cumulative = scale_path_to_mutation(model);
+    } else if (sampling == "rejection") {
       K = p * L;
       Tdiff_pool.resize(K, p);
       T_pool.resize(K, p);
@@ -281,8 +285,9 @@ double obs_log_likelihood(
         d_pool = hamming_dist_mat(genotype_pool, obs.row(i));
       }
       DataImportanceSampling importance_sampling = importance_weight(
-        obs.row(i), L, model, times[i], sampling, version, d_pool, Tdiff_pool,
-        rngs[omp_get_thread_num()], sampling_times_available);
+        obs.row(i), L, model, times[i], sampling, version, scale_cumulative,
+        d_pool, Tdiff_pool, rngs[omp_get_thread_num()],
+        sampling_times_available);
       llhood += std::log(importance_sampling.w.sum() / L);
     }
   }
@@ -321,8 +326,9 @@ VectorXi hamming_dist_mat(const MatrixXb& x, const RowVectorXb& y) {
 DataImportanceSampling importance_weight(
     const RowVectorXb& genotype, const unsigned int L, const Model& model,
     const double time, const std::string& sampling, const unsigned int version,
-    const VectorXi& dist_pool, const MatrixXd& Tdiff_pool,
-    Context::rng_type& rng, const bool sampling_times_available=false) {
+    const VectorXd& scale_cumulative, const VectorXi& dist_pool,
+    const MatrixXd& Tdiff_pool, Context::rng_type& rng,
+    const bool sampling_times_available=false) {
 
   /* Initialization and instantiation of variables */
   const vertices_size_type p = model.size(); // Number of mutations / events
@@ -345,7 +351,41 @@ DataImportanceSampling importance_weight(
     importance_sampling.w = pow(model.get_epsilon(), d.array()) *
       pow(1 - model.get_epsilon(), p - d.array());
   } else if (sampling == "add-remove") {
-    //TODO
+    VectorXd log_prob_Y_X(L);
+    VectorXd log_prob_X(L);
+    VectorXd log_proposal(L);
+
+    /* Pick a move: add or remove with equal probability
+     * Remove: choose event x with prob. ~ sum_{j \in max_path to x}(1/lambda_j)
+     * Add: choose event x with an inverse probability
+     * TODO: add 'stand-still' move (applicable if the observation is
+     * compatible with the poset).
+     */
+    std::vector<int> move = runif_int_std(L, 1, rng);
+    log_proposal.setConstant(std::log(0.5) + std::log(p));
+    double q_choice;
+    for (unsigned int l = 0; l < L; ++l) {
+      samples.row(l) = draw_sample(genotype, model, move[l], scale_cumulative,
+                                   q_choice, rng);
+      log_proposal[l] += std::log(q_choice);
+    }
+    importance_sampling.dist = hamming_dist_mat(samples, genotype);
+
+    VectorXd T_sampling(L);
+    if (sampling_times_available)
+      T_sampling.setConstant(time);
+
+    /* Generate mutation times based on samples */
+    importance_sampling.Tdiff =
+      generate_mutation_times(samples, model, log_proposal, T_sampling, rng,
+                              sampling_times_available);
+    log_prob_Y_X =
+      log_bernoulli_process(importance_sampling.dist.cast<double>(),
+                            model.get_epsilon(), p);
+    log_prob_X = cbn_density_log(importance_sampling.Tdiff, model.get_lambda());
+
+    importance_sampling.w =
+      (log_prob_Y_X + log_prob_X - log_proposal).array().exp();
   } else if (sampling == "rejection") {
     VectorXd d_pool = dist_pool.cast<double>();
     VectorXd q_prob = pow(model.get_epsilon(), d_pool.array()) *
@@ -406,6 +446,7 @@ double MCEM_hcbn(
   MatrixXd expected_Tdiff(N, p);
   VectorXd Tdiff_colsum(p);
   MatrixXd Tdiff_pool;
+  VectorXd scale_cumulative;
 
   if (sampling == "rejection") {
     // if (p < 19) {
@@ -457,7 +498,10 @@ double MCEM_hcbn(
      * Conditional expectation for the sufficient statistics per observation
      * and event
      */
-    if (sampling == "rejection") {
+    if (sampling == "add-remove") {
+      scale_cumulative.resize(p);
+      scale_cumulative = scale_path_to_mutation(model);
+    } else if (sampling == "rejection") {
       /* All threads share the same pool of mutation times */
       T_pool.resize(K, p);
       T_pool = sample_times(K, model, Tdiff_pool, ctx.rng);
@@ -482,8 +526,9 @@ double MCEM_hcbn(
         d_pool = hamming_dist_mat(genotype_pool, obs.row(i));
       }
       DataImportanceSampling importance_sampling = importance_weight(
-        obs.row(i), L, model, times(i), sampling, version, d_pool, Tdiff_pool,
-        rngs[omp_get_thread_num()], sampling_times_available);
+        obs.row(i), L, model, times(i), sampling, version, scale_cumulative,
+        d_pool, Tdiff_pool, rngs[omp_get_thread_num()],
+        sampling_times_available);
 
       expected_dist(i) =
         importance_sampling.w.dot(importance_sampling.dist.cast<double>()) /
@@ -650,8 +695,8 @@ RcppExport SEXP _MCEM_hcbn(
 RcppExport SEXP _importance_weight_genotype(
     SEXP genotypeSEXP, SEXP LSEXP, SEXP posetSEXP, SEXP lambdaSEXP,
     SEXP epsSEXP, SEXP timeSEXP, SEXP samplingSEXP, SEXP versionSEXP,
-    SEXP d_poolSEXP, SEXP Tdiff_poolSEXP, SEXP lambda_sSEXP,
-    SEXP sampling_times_availableSEXP, SEXP seedSEXP) {
+    SEXP scale_cumulativeSEXP, SEXP d_poolSEXP, SEXP Tdiff_poolSEXP,
+    SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP, SEXP seedSEXP) {
 
   try {
     // Convert input to C++ types
@@ -663,6 +708,7 @@ RcppExport SEXP _importance_weight_genotype(
     const double time = as<double>(timeSEXP);
     const std::string& sampling = as<std::string>(samplingSEXP);
     const unsigned int version = as<unsigned int>(versionSEXP);
+    const MapVecd scale_cumulative(as<MapVecd>(scale_cumulativeSEXP));
     const MapVeci d_pool(as<MapVeci>(d_poolSEXP));
     const MapMatd Tdiff_pool(as<MapMatd>(Tdiff_poolSEXP));
     const float lambda_s = as<float>(lambda_sSEXP);
@@ -682,8 +728,8 @@ RcppExport SEXP _importance_weight_genotype(
     // Call the underlying C++ function
     Context ctx(seed);
     DataImportanceSampling w = importance_weight(
-      genotype, L, M, time, sampling, version, d_pool, Tdiff_pool, ctx.rng,
-      sampling_times_available);
+      genotype, L, M, time, sampling, version, scale_cumulative, d_pool,
+      Tdiff_pool, ctx.rng, sampling_times_available);
 
     // Return the result as a SEXP
     return List::create(_["w"]=w.w, _["dist"]=w.dist, _["Tdiff"]=w.Tdiff);
@@ -716,8 +762,9 @@ RcppExport SEXP _importance_weight(
 
     const unsigned int N = obs.rows(); // Number of observations / genotypes
     const auto p = poset.rows();       // Number of mutations / events
-
+    VectorXd scale_cumulative;
     VectorXd w_sum(N);
+    VectorXd w_sum_sqrt(N);
     VectorXd expected_dist(N);
     MatrixXd expected_Tdiff(N, p);
     edge_container edge_list = adjacency_mat2list(poset);
@@ -733,7 +780,10 @@ RcppExport SEXP _importance_weight(
     unsigned int K = 0;
     MatrixXd Tdiff_pool;
     MatrixXd T_pool;
-    if (sampling == "rejection") {
+    if (sampling == "add-remove") {
+      scale_cumulative.resize(p);
+      scale_cumulative = scale_path_to_mutation(M);
+    } else if (sampling == "rejection") {
       K = p * L;
       Tdiff_pool.resize(K, p);
       T_pool.resize(K, p);
@@ -760,17 +810,19 @@ RcppExport SEXP _importance_weight(
       }
       // Call the underlying C++ function
       DataImportanceSampling w = importance_weight(
-        obs.row(i), L, M, times(i), sampling, version, d_pool, Tdiff_pool,
-        rngs[omp_get_thread_num()], sampling_times_available);
+        obs.row(i), L, M, times(i), sampling, version, scale_cumulative,
+        d_pool, Tdiff_pool, rngs[omp_get_thread_num()],
+        sampling_times_available);
 
       w_sum[i] = w.w.sum();
+      w_sum_sqrt[i] = w.w.dot(w.w);
       expected_dist[i] = w.w.dot(w.dist.cast<double>()) / w_sum[i];
       expected_Tdiff.row(i) = (w.Tdiff.transpose() * w.w) / w_sum[i];
     }
 
     // Return the result as a SEXP
-    return List::create(_["w"]=w_sum, _["dist"]=expected_dist,
-                        _["Tdiff"]=expected_Tdiff);
+    return List::create(_["w"]=w_sum, _["w_sqrt"]=w_sum_sqrt,
+                        _["dist"]=expected_dist, _["Tdiff"]=expected_Tdiff);
   } catch  (...) {
     handle_exceptions();
   }
