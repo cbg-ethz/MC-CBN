@@ -310,6 +310,8 @@ geno_compatible_fraction <- function(poset, obs_events, weights){
   C / N
 }
 
+#' @export
+#' @noRd
 candidate_posets <- function (obs_events, obs_weights, min_compatible_geno_fraction) {
   posets <- list()
   violations = violation_freqs_w(obs_events, obs_weights)

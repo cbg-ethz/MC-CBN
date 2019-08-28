@@ -25,102 +25,6 @@
 
 using namespace Rcpp;
 
-// bool is_transitively_reduced(Model& M, MatrixXi& candidate_poset,
-//                              unsigned int e1, unsigned int e2) {
-//   bool reduced = 0;
-//   for (auto k : M.pa_closure[e2]) {
-//     if (M.poset(e1, k)) {
-//       candidate_poset(e1, e2) = 0;
-//       std::cout << "Removed edge: " << e1 << "->" << e2 << std::endl;
-//       reduced = 1;
-//     } else if (M.poset(k, e1) && M.poset(k, e2)) {
-//       // TODO: only need to consider parents in transitivley reduced graph
-//       candidate_poset(k, e2) = 0;
-//       std::cout << "Removed edge: " << k << "->" << e2 << std::endl;
-//       reduced = 1;
-//     }
-//   }
-// 
-//   for (auto k : M.ch_closure[e1]) {
-//     // TODO: only needs to consider children of e1 in transitively reduced
-//     // graph - then the if statement (below) can be avoided
-//     for (auto l : M.ch_closure[e2]) {
-//       if (k == l) {
-//         if (candidate_poset(e1, k)) {
-//           candidate_poset(e1, k) = 0;
-//           std::cout << "Removed edge: " << e1 << "->" << k << std::endl;
-//           reduced = 1;
-//         }
-//       }
-//     }
-//   }
-// 
-//   // Handle cycles
-//   if (candidate_poset(e2, e1)) {
-//     std::cout << "cycle" << std::endl;
-//     candidate_poset(e2, e1) = 0;
-//     std::cout << "Removed edge: " << e2 << "->" << e1 << std::endl;
-//     reduced = 1;
-//   } else {
-//     for (auto k : M.ch_closure[e2]) {
-//       if (k == e1) {
-//         std::cout << "cycle" << std::endl;
-//         reduced = 1;
-//       } 
-//     }
-//   }
-// 
-//   return reduced;
-// }
-
-//' Remove edges that make the graph nontransitively reduced
-//' Adapted from ct-cbn.h
-//'
-//' @noRd 
-/*bool make_transitively_reduced(MatrixXi& candidate_poset, const unsigned int p) {
-  
-  // Iterate through all the nodes
-  for (unsigned int i = 0; i < p; ++i) {
-    std::vector<bool> visit(p);
-    std::queue <int> q;
-
-    // Fill queue with children of i
-    // TODO: Possible improvements: (1) make poset Row-major, (2) use sparse matrix  
-    for (unsigned int j = 0; j < p; ++j)
-      if (candidate_poset(i, j))
-        q.push(j);
-
-    while (!q.empty()) {
-      unsigned int j = q.front();
-      q.pop();
-      for (unsigned int k = 0; k < p; ++k) {
-        // Fill queue with grandchildren of i
-        if (candidate_poset(j, k) && !visit[k]) {
-          visit[k] = 1;
-          q.push(k);
-
-          // Remove non-cover relations
-          if (candidate_poset(i, k)) {
-            candidate_poset(i, k) = 0;
-            std::cout << "Removed edge: " << i << "->" << k << std::endl;
-            std::cout << "j: " << j << std::endl; 
-          }
-
-          // Check for cycles
-          if (candidate_poset(k, i)) {
-            std::cout << "Cycle: " << k << "->" << i << std::endl;
-            std::cout << "j: " << j << std::endl;
-            return 1;
-          }
-
-        }
-      }
-    }
-  }
-  return 0;
-}*/
-
-
 //' Propose moves for the simulated annealing
 //'
 //' @noRd
@@ -186,47 +90,11 @@ double propose_edge(
           continue;
         }
       }
-      // if (!make_transitively_reduced(M_new.poset, p)) {
-      //   // Proposed edge has been removed after transitive reduction
-      //   // Check if there is a sequence e1 -> ek -> e2, such that it can be
-      //   // replaced by e1 -> ek and e1 -> e2.
-      //   if (!M_new.poset(e1, e2)) {
-      //     unsigned int num_intermediate = 0;
-      //     unsigned int idx_intermediate;
-      //     for (unsigned int k = 0; k < p; ++k) {
-      //       if (M_new.poset(e1, k) && M_new.poset(k, e2)) {
-      //         num_intermediate += 1;
-      //         idx_intermediate = k;
-      //       }
-      //     }
-      //     // Prune and reatach
-      //     if (num_intermediate == 1) {
-      //       // Remove ek -> e2
-      //       M_new.poset(idx_intermediate, e2) = 0;
-      //       // Add e1 -> e2
-      //       M_new.poset(e1, e2) = 1;
-      //       // TODO: resulting graph must be transitively reduced
-      //       // if (!make_transitively_reduced(M_new.poset, p))
-      //       //   reject = 1;
-      //     } else {
-      //       // fraction_compatible_new(e1, e2) = 0.0;
-      //       fraction_compatible_new = 0.0;
-      //       continue;
-      //     }
-      //   }
-      // } else
-      //   continue;
     } else {
       /* Remove edge*/
       remove_edge(v1, v2, M_new.poset);
-      // TODO - make this extra check part of a DBG mode
-      M_new.topological_sort();
-      if (M_new.transitive_reduction_dag()) {
-        if (ctx.get_verbose())
-          std::cout << "Removing edge: " <<  add.first << std::endl;
-      } else {
-        continue;
-      }
+      if (ctx.get_verbose())
+        std::cout << "Removing edge: " <<  add.first << std::endl;
     }
     
     /* Heuristic based on the fraction of compatible observations with the
@@ -279,10 +147,10 @@ double propose_edge(
    * probability. However, when the temperature (T) is 0, only accept steps
    * that increase the likelihood
    */
-  if (T == 0)
+  if (T == 0.0)
     return llhood_current;
   
-  double acceptance_prob = exp(-(llhood_current - llhood_new)/T);
+  double acceptance_prob = std::exp(-(llhood_current - llhood_new)/T);
   
   if (acceptance_prob > rand(ctx.rng)) {
     num_accept += 1;
@@ -311,20 +179,20 @@ double adaptive_simulated_annealing(
 
   const auto N = obs.rows();   // Number of observations / genotypes
   float acceptace_rate_current;
-  float scaling_const = -log(2) / log2f(acceptance_rate);
+  float scaling_const = -std::log(2.0) / std::log(acceptance_rate);
   int num_accept = 0;
-  
+
   /* 1. Compute likelihood of the initial model */
   double llhood = MCEM_hcbn(
     poset, obs, times, weights, L, sampling, version, control_EM,
     sampling_times_available, thrds, ctx);
-  
+
   /* 2. Compute the fraction of compatible observations/genotypes with the
    *    initial poset
    */
   double fraction_compatible =
     (double) num_compatible_observations(obs, poset, N) / N;
-  
+
   if (ctx.get_verbose()) {
     std::cout << "Initial Log-likelihood:" << llhood << std::endl;
     std::cout << "Fraction of compatible observations: " <<
@@ -355,15 +223,6 @@ double adaptive_simulated_annealing(
     if (ctx.get_verbose())
       std::cout << "Step " << iter << " - log-likelihood: " << llhood <<
         std::endl;
-    
-    //DBG
-    // std::cout << "Fraction of compatible observations: " <<
-    //   fraction_compatible << std::endl;
-    // std::cout << "Epsilon: " << poset.get_epsilon() << "\t" << "Lambdas: " <<
-    //   poset.get_lambda().transpose() << std::endl; 
-    // std::cout << "Poset:\n";
-    // poset.print_cover_relations();
-    // std::cout << std::endl;
 
     /* 3.a Compute the likelihood for the new move */
     llhood = propose_edge(
@@ -378,8 +237,8 @@ double adaptive_simulated_annealing(
     /* Update temperature */
     if (!(iter % step_size)) {
       acceptace_rate_current = (float) num_accept / step_size;
-      T *= std::exp((0.5 - pow(acceptace_rate_current, scaling_const)) *
-        adap_rate); // TODO: check difference with Rcpp exp
+      T *= std::exp((0.5 - std::pow(acceptace_rate_current, scaling_const)) *
+        adap_rate);
       num_accept = 0;
       if (ctx.get_verbose())
         std::cout << "Temperature update: " << T << " (acceptance rate: "
@@ -436,7 +295,7 @@ RcppExport SEXP _adaptive_simulated_annealing(
     const int seed = as<int>(seedSEXP);
 
     const auto p = poset.rows(); // Number of mutations / events
-    const float factor_fraction_compatible = 0.05; //TODO: remove hard -coded value
+    const float factor_fraction_compatible = 0.05; //TODO: remove hard-coded value
 
     edge_container edge_list = adjacency_mat2list(poset);
     Model M(edge_list, p, lambda_s);
@@ -460,6 +319,46 @@ RcppExport SEXP _adaptive_simulated_annealing(
     //TODO (return cover relations instead of adjacency matrix)
     return List::create(_["lambda"]=M.get_lambda(), _["eps"]=M.get_epsilon(),
                         _["poset"]=adjacency_list2mat(M), _["llhood"]=llhood);
+  } catch  (...) {
+    handle_exceptions();
+  }
+  return R_NilValue;
+}
+
+RcppExport SEXP _remove_test(SEXP posetSEXP) {
+
+  try {
+    /* Convert input to C++ types */
+    MatrixXi poset = as<MapMati>(posetSEXP);
+
+    const auto p = poset.rows(); // Number of mutations / events
+
+    edge_container edge_list = adjacency_mat2list(poset);
+    Model M(edge_list, p);
+    M.has_cycles();
+    if (M.cycle)
+      throw not_acyclic_exception();
+    M.topological_sort();
+
+    /* Call the underlying C++ function */
+    boost::graph_traits<Poset>::edge_iterator ei, ei_end;
+    for (boost::tie(ei, ei_end) = boost::edges(M.poset); ei != ei_end; ++ei) {
+      std::cout << "Testing edge: " << source(*ei, M.poset) << " --> "
+                << target(*ei, M.poset) << std::endl;
+      Node v1 = source(*ei, M.poset);
+      Node v2 = target(*ei, M.poset);
+      Model M_new(M);
+      remove_edge(v1, v2, M_new.poset);
+      M_new.has_cycles();
+      if (M_new.cycle)
+        throw not_acyclic_exception();
+      M_new.topological_sort();
+      if (!M_new.transitive_reduction_dag())
+        std::cout << "Not transitively reduced" << std::endl;
+    }
+
+    /* Return the result as a SEXP */
+    return wrap(0);
   } catch  (...) {
     handle_exceptions();
   }
