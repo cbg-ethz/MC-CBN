@@ -90,8 +90,8 @@ adaptive.simulated.annealing <- function(
 
   if (is.null(outdir))
     outdir <- file.path(getwd(), "")
-  else if (!dir.exists(outdir))
-    outdir <- file.path(getwd(), "")
+  # else if (!dir.exists(outdir))
+  #   outdir <- file.path(getwd(), "")
   
   if (is.null(seed))
     seed <- sample.int(3e4, 1)

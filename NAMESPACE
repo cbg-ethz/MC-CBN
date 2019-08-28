@@ -2,6 +2,7 @@
 
 export(MCEM.hcbn)
 export(adaptive.simulated.annealing)
+export(candidate_posets)
 export(compatible_genotypes)
 export(complete.loglikelihood)
 export(estimate_mutation_rates)
