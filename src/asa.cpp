@@ -163,11 +163,11 @@ double propose_edge(
     return llhood_current;
 }
 
-//' Adaptive simulated annealing
+//' Simulated annealing
 //' 
 //' @noRd
 //' @param lambdas rate parameters
-double adaptive_simulated_annealing(
+double simulated_annealing(
     Model& poset, const MatrixXb& obs, const VectorXd& times,
     const RowVectorXd& weights, float T, const float adap_rate,
     const float acceptance_rate, const int step_size,
@@ -202,7 +202,7 @@ double adaptive_simulated_annealing(
     std::cout << std::endl;
   }
 
-  /* 3. Adaptive simulated annealing */
+  /* 3. (Adaptive) simulated annealing */
   // if (!boost::filesystem::is_directory(output_dir)) {
   //   std::cerr << "ERROR: Output directory '" << output_dir
   //             << "' does not exist!" << std::endl;
@@ -230,16 +230,29 @@ double adaptive_simulated_annealing(
       factor_fraction_compatible, L, sampling, version, control_EM,
       sampling_times_available, thrds, ctx);
 
+    //DBG
+    poset.print_cover_relations();
     /* Write to output file */
     outfile << iter << "\t" << llhood << "\t" << poset.get_epsilon() << "\t"
             << poset.get_lambda().transpose() << std::endl;
 
-    /* Update temperature */
-    if (!(iter % step_size)) {
+    /* 3.b Update temperature */
+    if (!adaptive) {
+      acceptace_rate_current = (float) num_accept / (iter + 1);
+      T *= 1 - 1/poset.size();
+
+      if (ctx.get_verbose())
+        std::cout << "Temperature update: " << T << " (acceptance rate: "
+                  << acceptace_rate_current << ")" << std::endl;
+      /* Write to output file */
+      outfile_temperature << iter << "\t" << llhood << "\t" << T << "\t"
+                          << acceptace_rate_current << std::endl;
+    } else if (!(iter % step_size)) {
       acceptace_rate_current = (float) num_accept / step_size;
       T *= std::exp((0.5 - std::pow(acceptace_rate_current, scaling_const)) *
         adap_rate);
       num_accept = 0;
+
       if (ctx.get_verbose())
         std::cout << "Temperature update: " << T << " (acceptance rate: "
                   << acceptace_rate_current << ")" << std::endl;
@@ -248,6 +261,14 @@ double adaptive_simulated_annealing(
                           << acceptace_rate_current << std::endl;
     }
   }
+
+  /* 4. Compute likelihood of the final model */
+  ControlEM control_last(control_EM.max_iter * 2,
+                         control_EM.update_step_size * 2, tol, max_lambda);
+  double llhood = MCEM_hcbn(
+    poset, obs, times, weights, L, sampling, version, control_last,
+    sampling_times_available, thrds, ctx);
+
   outfile_temperature.close();
   outfile.close();
   return llhood;
@@ -357,6 +378,34 @@ RcppExport SEXP _remove_test(SEXP posetSEXP) {
         std::cout << "Not transitively reduced" << std::endl;
     }
 
+    /* Return the result as a SEXP */
+    return wrap(0);
+  } catch  (...) {
+    handle_exceptions();
+  }
+  return R_NilValue;
+}
+
+RcppExport SEXP _transitive_reduction_dag(SEXP posetSEXP) {
+  
+  try {
+    /* Convert input to C++ types */
+    MatrixXi poset = as<MapMati>(posetSEXP);
+    
+    const auto p = poset.rows(); // Number of mutations / events
+    
+    edge_container edge_list = adjacency_mat2list(poset);
+    Model M(edge_list, p);
+    M.has_cycles();
+    if (M.cycle)
+      throw not_acyclic_exception();
+    M.topological_sort();
+    M.print_cover_relations();
+    if (!M.transitive_reduction_dag()) {
+      std::cout << "Not transitively reduced" << std::endl;
+      M.print_cover_relations();
+    }
+    
     /* Return the result as a SEXP */
     return wrap(0);
   } catch  (...) {
