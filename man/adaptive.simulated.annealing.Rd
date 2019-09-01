@@ -9,7 +9,8 @@ adaptive.simulated.annealing(poset, obs, lambda, eps, times = NULL,
   "rejection"), version = 3L, max.iter = 100L, update.step.size = 20L,
   tol = 0.001, max.lambda.val = 1e+06, T0 = 50, adap.rate = 0.3,
   acceptance.rate = NULL, step.size = NULL, max.iter.asa = 10000L,
-  outdir = NULL, thrds = 1L, verbose = FALSE, seed = NULL)
+  adaptive = TRUE, outdir = NULL, thrds = 1L, verbose = FALSE,
+  seed = NULL)
 }
 \arguments{
 \item{poset}{a matrix containing the cover relations}
@@ -72,6 +73,9 @@ after which the temperature should be updated. Defaults to \code{50}}
 
 \item{max.iter.asa}{the maximum number of iterations. Defaults to
 \code{10000} iterations}
+
+\item{adaptive}{a boolean variable indicating whether to use an adaptive
+annealing schedule}
 
 \item{outdir}{an optional argument indicating the path to the output
 directory}

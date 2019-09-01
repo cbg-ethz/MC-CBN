@@ -21,7 +21,7 @@ bool zeroInDegree(const NumericMatrix &poset, int i) {
 
 void allTopos(NumericMatrix &poset,  vector<int> &topo_path, long &nrOfSorts, vector<bool> &visited) {
   
-  if(topo_path.size() == poset.nrow()) {
+  if(topo_path.size() == (size_t) poset.nrow()) {
     nrOfSorts++;
     cout<<" New path: " << nrOfSorts<<"      :";
     
