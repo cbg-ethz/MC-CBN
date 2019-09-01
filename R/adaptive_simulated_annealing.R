@@ -46,6 +46,8 @@
 #' after which the temperature should be updated. Defaults to \code{50}
 #' @param max.iter.asa the maximum number of iterations. Defaults to
 #' \code{10000} iterations
+#' @param adaptive a boolean variable indicating whether to use an adaptive
+#' annealing schedule
 #' @param outdir an optional argument indicating the path to the output
 #' directory
 #' @param thrds number of threads for parallel execution
@@ -56,8 +58,8 @@ adaptive.simulated.annealing <- function(
   poset, obs, lambda, eps, times=NULL, lambda.s=1.0, weights=NULL, L,
   sampling=c('forward', 'add-remove', 'rejection'), version=3L, max.iter=100L,
   update.step.size=20L, tol=0.001, max.lambda.val=1e6, T0=50, adap.rate=0.3,
-  acceptance.rate=NULL, step.size=NULL, max.iter.asa=10000L, outdir=NULL,
-  thrds=1L, verbose=FALSE, seed=NULL) {
+  acceptance.rate=NULL, step.size=NULL, max.iter.asa=10000L, adaptive=TRUE,
+  outdir=NULL, thrds=1L, verbose=FALSE, seed=NULL) {
   
   sampling <- match.arg(sampling)
   N <- nrow(obs)
@@ -104,6 +106,6 @@ adaptive.simulated.annealing <- function(
         eps, times, lambda.s, weights, as.integer(L), sampling,
         as.integer(version), as.integer(max.iter), as.integer(update.step.size),
         tol, max.lambda.val, T0, adap.rate, acceptance.rate,
-        as.integer(step.size), as.integer(max.iter.asa), outdir,
+        as.integer(step.size), as.integer(max.iter.asa), adaptive, outdir,
         sampling.times.available, as.integer(thrds), verbose, as.integer(seed))
 }

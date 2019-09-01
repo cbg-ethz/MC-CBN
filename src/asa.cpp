@@ -21,9 +21,38 @@
 // #include <boost/filesystem.hpp>
 
 #include "mcem.hpp"
+#include "asa.hpp"
 #include "not_acyclic_exception.hpp"
 
 using namespace Rcpp;
+
+float ControlSA::get_adap_rate() const {
+  return _adap_rate;
+}
+
+float ControlSA::get_acceptance_rate() const {
+  return _acceptance_rate;
+}
+
+unsigned int ControlSA::get_step_size() const {
+  return _step_size;
+}
+
+unsigned int ControlSA::get_max_iter() const {
+  return _max_iter;
+}
+
+float ControlSA::get_compatible_fraction_factor() const {
+  return _compatible_fraction_factor;
+}
+
+bool ControlSA::get_adaptive() const {
+  return _adaptive;
+}
+
+const std::string& ControlSA::get_outdir() const{
+  return _outdir;
+}
 
 //' Propose moves for the simulated annealing
 //'
@@ -169,17 +198,14 @@ double propose_edge(
 //' @param lambdas rate parameters
 double simulated_annealing(
     Model& poset, const MatrixXb& obs, const VectorXd& times,
-    const RowVectorXd& weights, float T, const float adap_rate,
-    const float acceptance_rate, const int step_size,
-    const unsigned int max_iter_ASA, const float factor_fraction_compatible,
-    const unsigned int L, const std::string& sampling,
-    const unsigned int version, const ControlEM& control_EM,
-    const std::string& output_dir, const bool sampling_times_available,
+    const RowVectorXd& weights, ControlSA& control_ASA, const unsigned int L,
+    const std::string& sampling, const unsigned int version,
+    const ControlEM& control_EM, const bool sampling_times_available,
     const unsigned int thrds, Context& ctx) {
 
   const auto N = obs.rows();   // Number of observations / genotypes
   float acceptace_rate_current;
-  float scaling_const = -std::log(2.0) / std::log(acceptance_rate);
+  float scaling_const = -std::log(2.0) / std::log(control_ASA.get_acceptance_rate());
   int num_accept = 0;
 
   /* 1. Compute likelihood of the initial model */
@@ -203,32 +229,32 @@ double simulated_annealing(
   }
 
   /* 3. (Adaptive) simulated annealing */
-  // if (!boost::filesystem::is_directory(output_dir)) {
-  //   std::cerr << "ERROR: Output directory '" << output_dir
+  // if (!boost::filesystem::is_directory(control_ASA.get_outdir())) {
+  //   std::cerr << "ERROR: Output directory '" << control_ASA.get_outdir()
   //             << "' does not exist!" << std::endl;
   //   return 0;
   // }
   std::ofstream outfile_temperature;
-  outfile_temperature.open(output_dir + "asa.txt");
+  outfile_temperature.open(control_ASA.get_outdir() + "asa.txt");
   outfile_temperature << "step\t llhood\t temperature\t acceptance rate"
                       << std::endl;
 
   std::ofstream outfile;
-  outfile.open(output_dir + "params.txt");
+  outfile.open(control_ASA.get_outdir() + "params.txt");
   outfile << "step\t llhood\t epsilon\t lambdas" << std::endl;
   outfile << 0 << "\t" << llhood << "\t" << poset.get_epsilon() << "\t"
           << poset.get_lambda().transpose() << std::endl;
 
-  for (unsigned int iter = 1; iter < max_iter_ASA; ++ iter) {
+  for (unsigned int iter = 1; iter < control_ASA.get_max_iter(); ++iter) {
     if (ctx.get_verbose())
-      std::cout << "Step " << iter << " - log-likelihood: " << llhood <<
-        std::endl;
+      std::cout << "Step " << iter << " - log-likelihood: " << llhood
+                << std::endl;
 
     /* 3.a Compute the likelihood for the new move */
     llhood = propose_edge(
-      poset, obs, llhood, fraction_compatible, times, weights, T, num_accept,
-      factor_fraction_compatible, L, sampling, version, control_EM,
-      sampling_times_available, thrds, ctx);
+      poset, obs, llhood, fraction_compatible, times, weights, control_ASA.T,
+      num_accept, control_ASA.get_compatible_fraction_factor(), L, sampling,
+      version, control_EM, sampling_times_available, thrds, ctx);
 
     //DBG
     poset.print_cover_relations();
@@ -237,35 +263,38 @@ double simulated_annealing(
             << poset.get_lambda().transpose() << std::endl;
 
     /* 3.b Update temperature */
-    if (!adaptive) {
+    if (!control_ASA.get_adaptive()) {
       acceptace_rate_current = (float) num_accept / (iter + 1);
-      T *= 1 - 1/poset.size();
+      control_ASA.T *= 1 - 1.0 / poset.size();
 
       if (ctx.get_verbose())
-        std::cout << "Temperature update: " << T << " (acceptance rate: "
-                  << acceptace_rate_current << ")" << std::endl;
+        std::cout << "Temperature update: " << control_ASA.T
+                  << " (acceptance rate: " << acceptace_rate_current << ")"
+                  << std::endl;
       /* Write to output file */
-      outfile_temperature << iter << "\t" << llhood << "\t" << T << "\t"
-                          << acceptace_rate_current << std::endl;
-    } else if (!(iter % step_size)) {
-      acceptace_rate_current = (float) num_accept / step_size;
-      T *= std::exp((0.5 - std::pow(acceptace_rate_current, scaling_const)) *
-        adap_rate);
+      outfile_temperature << iter << "\t" << llhood << "\t" << control_ASA.T
+                          << "\t" << acceptace_rate_current << std::endl;
+    } else if (!(iter % control_ASA.get_step_size())) {
+      acceptace_rate_current = (float) num_accept / control_ASA.get_step_size();
+      control_ASA.T *= std::exp((0.5 - std::pow(acceptace_rate_current, scaling_const)) *
+        control_ASA.get_adap_rate());
       num_accept = 0;
 
       if (ctx.get_verbose())
-        std::cout << "Temperature update: " << T << " (acceptance rate: "
-                  << acceptace_rate_current << ")" << std::endl;
+        std::cout << "Temperature update: " << control_ASA.T
+                  << " (acceptance rate: " << acceptace_rate_current << ")"
+                  << std::endl;
       /* Write to output file */
-      outfile_temperature << iter << "\t" << llhood << "\t" << T << "\t"
-                          << acceptace_rate_current << std::endl;
+      outfile_temperature << iter << "\t" << llhood << "\t" << control_ASA.T
+                          << "\t" << acceptace_rate_current << std::endl;
     }
   }
 
   /* 4. Compute likelihood of the final model */
   ControlEM control_last(control_EM.max_iter * 2,
-                         control_EM.update_step_size * 2, tol, max_lambda);
-  double llhood = MCEM_hcbn(
+                         control_EM.update_step_size * 2, control_EM.tol,
+                         control_EM.max_lambda);
+  llhood = MCEM_hcbn(
     poset, obs, times, weights, L, sampling, version, control_last,
     sampling_times_available, thrds, ctx);
 
@@ -280,7 +309,7 @@ RcppExport SEXP _adaptive_simulated_annealing(
     SEXP samplingSEXP, SEXP versionSEXP, SEXP max_iter_EMSEXP,
     SEXP update_step_sizeSEXP, SEXP tolSEXP, SEXP max_lambdaSEXP, SEXP T0SEXP,
     SEXP adap_rateSEXP, SEXP acceptance_rateSEXP, SEXP step_sizeSEXP,
-    SEXP max_iter_ASASEXP, SEXP output_dirSEXP,
+    SEXP max_iter_ASASEXP, SEXP adaptiveSEXP, SEXP outdirSEXP,
     SEXP sampling_times_availableSEXP, SEXP thrdsSEXP, SEXP verboseSEXP,
     SEXP seedSEXP) {
   
@@ -309,15 +338,14 @@ RcppExport SEXP _adaptive_simulated_annealing(
     const float acceptance_rate = as<float>(acceptance_rateSEXP);
     const int step_size = as<int>(step_sizeSEXP);
     const unsigned int max_iter_ASA = as<unsigned int>(max_iter_ASASEXP);
-    const std::string& output_dir = as<std::string>(output_dirSEXP);
+    const bool adaptive = as<bool>(adaptiveSEXP);
+    const std::string& outdir = as<std::string>(outdirSEXP);
     const bool sampling_times_available = as<bool>(sampling_times_availableSEXP);
     const int thrds = as<int>(thrdsSEXP);
     const bool verbose = as<bool>(verboseSEXP);
     const int seed = as<int>(seedSEXP);
 
     const auto p = poset.rows(); // Number of mutations / events
-    const float factor_fraction_compatible = 0.05; //TODO: remove hard-coded value
-
     edge_container edge_list = adjacency_mat2list(poset);
     Model M(edge_list, p, lambda_s);
     M.set_lambda(lambda);
@@ -328,16 +356,19 @@ RcppExport SEXP _adaptive_simulated_annealing(
     M.topological_sort();
 
     ControlEM control_EM(max_iter_EM, update_step_size, tol, max_lambda);
-    
+    ControlSA control_ASA(outdir, acceptance_rate, T0, adap_rate, step_size,
+                          max_iter_ASA, adaptive);
+
     /* Call the underlying C++ function */
     Context ctx(seed, verbose);
-    double llhood = adaptive_simulated_annealing(
-      M, obs, times, weights, T0, adap_rate, acceptance_rate, step_size,
-      max_iter_ASA, factor_fraction_compatible, L, sampling, version,
-      control_EM, output_dir, sampling_times_available, thrds, ctx);
+    double llhood = simulated_annealing(
+      M, obs, times, weights, control_ASA, L, sampling, version, control_EM,
+      sampling_times_available, thrds, ctx);
     
     /* Return the result as a SEXP */
-    //TODO (return cover relations instead of adjacency matrix)
+    /* NOTE: (possible improvement) return cover relations instead of adjacency
+     * matrix
+     */
     return List::create(_["lambda"]=M.get_lambda(), _["eps"]=M.get_epsilon(),
                         _["poset"]=adjacency_list2mat(M), _["llhood"]=llhood);
   } catch  (...) {
