@@ -71,6 +71,40 @@ void Model::print_cover_relations(PropertyMap name) {
               << get(name, target(*ei, poset)) << std::endl;
 }
 
+//' @description Obtain all successors per node.
+void Model::set_children() {
+
+  /* Loop through vertices in reverse topological order */
+  for (node_container::const_iterator it = topo_path.begin();
+       it != topo_path.end(); ++it) {
+    Node u = *it;
+    _children[u].clear();
+    /* Loop through (direct) successor/children of node u */
+    boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end;
+    for (boost::tie(out_begin, out_end) = out_edges(u, poset);
+         out_begin != out_end; ++out_begin) {
+      Node v = target(*out_begin, poset);
+      _children[u].insert(v);
+      _children[u].insert(_children[v].begin(), _children[v].end());
+    }
+  }
+}
+
+//' @description Obtain successors of a given node.
+std::unordered_set<Node> Model::get_successors(Node u) {
+  std::unordered_set<Node> successors;
+
+  /* Loop through (direct) successor/children of node u */
+  boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end;
+  for (boost::tie(out_begin, out_end) = out_edges(u, poset);
+       out_begin != out_end; ++out_begin) {
+    Node v = target(*out_begin, poset);
+    successors.insert(v);
+    successors.insert(_children[v].begin(), _children[v].end());
+  }
+  return successors;
+}
+
 //' @description Obtain direct successors per node. Successsors are sorted by
 //' the topological ordering
 std::vector<node_container> Model::get_direct_successors(node_container& topo_order) {
@@ -93,8 +127,8 @@ std::vector<node_container> Model::get_direct_successors(node_container& topo_or
 
 //' @description Compute transitive reduction for a DAG
 //' Code adapted from boost/graph/transitive_closure.hpp
-bool Model::transitive_reduction_dag() {
-  bool is_transitively_reduced = true;
+void Model::transitive_reduction_dag() {
+  reduction_flag = true;
   node_container topo_ordering(_size);
   vertices_size_type n = 0;
   /* Record the rank for each vertex within the topological ordering */
@@ -123,7 +157,7 @@ bool Model::transitive_reduction_dag() {
       if (all_successors[u].find(v) != all_successors[u].end()) {
         /* remove edge (u, v) as v is already a children of u */
         remove_edge(u, v, poset);
-        is_transitively_reduced = false;
+        reduction_flag = false;
       } else {
         /* successors(u) = successors(u) U {v} */
         all_successors[u].insert(v);
@@ -132,7 +166,6 @@ bool Model::transitive_reduction_dag() {
       }
     }
   }
-  return is_transitively_reduced;
 }
 
 void Model::print_cover_relations() {

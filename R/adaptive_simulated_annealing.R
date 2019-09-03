@@ -8,8 +8,6 @@
 #' @param obs a matrix of observations, where each row correponds to a
 #' vector indicating whether an event has been observed (\code{1}) or not
 #' (\code{0})
-#' @param lambda a vector of the rate parameters
-#' @param eps error rate
 #' @param times an optional vector of sampling times per observation
 #' @param lambda.s rate of the sampling process. Defaults to \code{1.0}
 #' @param weights a vector containing observation weights
@@ -55,7 +53,7 @@
 #' information
 #' @param seed seed for reproducibility
 adaptive.simulated.annealing <- function(
-  poset, obs, lambda, eps, times=NULL, lambda.s=1.0, weights=NULL, L,
+  poset, obs, times=NULL, lambda.s=1.0, weights=NULL, L,
   sampling=c('forward', 'add-remove', 'rejection'), version=3L, max.iter=100L,
   update.step.size=20L, tol=0.001, max.lambda.val=1e6, T0=50, adap.rate=0.3,
   acceptance.rate=NULL, step.size=NULL, max.iter.asa=10000L, adaptive=TRUE,
@@ -97,15 +95,11 @@ adaptive.simulated.annealing <- function(
   
   if (is.null(seed))
     seed <- sample.int(3e4, 1)
-  
-  if (is.null(eps)) {
-    set.seed(seed)
-    eps <- runif(1, 0.01, 0.3)
-  }
-  .Call('_adaptive_simulated_annealing', PACKAGE='mccbn', poset, obs, lambda,
-        eps, times, lambda.s, weights, as.integer(L), sampling,
-        as.integer(version), as.integer(max.iter), as.integer(update.step.size),
-        tol, max.lambda.val, T0, adap.rate, acceptance.rate,
-        as.integer(step.size), as.integer(max.iter.asa), adaptive, outdir,
-        sampling.times.available, as.integer(thrds), verbose, as.integer(seed))
+
+  .Call('_adaptive_simulated_annealing', PACKAGE='mccbn', poset, obs, times,
+        lambda.s, weights, as.integer(L), sampling, as.integer(version),
+        as.integer(max.iter), as.integer(update.step.size), tol, max.lambda.val,
+        T0, adap.rate, acceptance.rate, as.integer(step.size),
+        as.integer(max.iter.asa), adaptive, outdir, sampling.times.available,
+        as.integer(thrds), verbose, as.integer(seed))
 }
