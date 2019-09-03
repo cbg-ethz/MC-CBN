@@ -4,10 +4,10 @@
 \alias{adaptive.simulated.annealing}
 \title{Adaptive simulated annealing}
 \usage{
-adaptive.simulated.annealing(poset, obs, lambda, eps, times = NULL,
-  lambda.s = 1, weights = NULL, L, sampling = c("forward", "add-remove",
-  "rejection"), version = 3L, max.iter = 100L, update.step.size = 20L,
-  tol = 0.001, max.lambda.val = 1e+06, T0 = 50, adap.rate = 0.3,
+adaptive.simulated.annealing(poset, obs, times = NULL, lambda.s = 1,
+  weights = NULL, L, sampling = c("forward", "add-remove", "rejection"),
+  version = 3L, max.iter = 100L, update.step.size = 20L, tol = 0.001,
+  max.lambda.val = 1e+06, T0 = 50, adap.rate = 0.3,
   acceptance.rate = NULL, step.size = NULL, max.iter.asa = 10000L,
   adaptive = TRUE, outdir = NULL, thrds = 1L, verbose = FALSE,
   seed = NULL)
@@ -18,10 +18,6 @@ adaptive.simulated.annealing(poset, obs, lambda, eps, times = NULL,
 \item{obs}{a matrix of observations, where each row correponds to a
 vector indicating whether an event has been observed (\code{1}) or not
 (\code{0})}
-
-\item{lambda}{a vector of the rate parameters}
-
-\item{eps}{error rate}
 
 \item{times}{an optional vector of sampling times per observation}
 

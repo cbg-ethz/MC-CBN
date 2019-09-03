@@ -108,13 +108,20 @@ VectorXd log_bernoulli_process(const VectorXd& dist, const double eps,
 //' Compute complete-data log-likelihood or (equivalently) hidden log-likelihood
 double complete_log_likelihood(const VectorXd& lambda, const double eps,
                                const MatrixXd& Tdiff, const VectorXd& dist,
-                               const float W) {
+                               const float W, const bool internal) {
 
   const unsigned int p = lambda.size();
   const unsigned int N = dist.size();
   double llhood;
 
-  llhood = W * lambda.array().log().sum() - (Tdiff * lambda).sum();
+  switch(internal) {
+  case(0):
+    llhood = N * lambda.array().log().sum() - (Tdiff * lambda).sum();
+    break;
+  case(1):
+    llhood = N * (lambda.array().log().sum() - p);
+  }
+
   if (eps == 0) {
     for (unsigned int i = 0; i < N; ++i) {
       if (dist(i) != 0)
@@ -328,7 +335,7 @@ DataImportanceSampling importance_weight(
     const double time, const std::string& sampling, const unsigned int version,
     const VectorXd& scale_cumulative, const VectorXi& dist_pool,
     const MatrixXd& Tdiff_pool, Context::rng_type& rng,
-    const bool sampling_times_available=false) {
+    const bool sampling_times_available) {
 
   /* Initialization and instantiation of variables */
   const vertices_size_type p = model.size(); // Number of mutations / events
@@ -444,6 +451,7 @@ double MCEM_hcbn(
   bool tol_comparison = true;
   VectorXd expected_dist(N);
   MatrixXd expected_Tdiff(N, p);
+  VectorXd obs_llhood(N);
   VectorXd Tdiff_colsum(p);
   MatrixXd Tdiff_pool;
   VectorXd scale_cumulative;
@@ -530,12 +538,12 @@ double MCEM_hcbn(
         d_pool, Tdiff_pool, rngs[omp_get_thread_num()],
         sampling_times_available);
 
+      obs_llhood(i) = std::log(importance_sampling.w.sum() / L);
+      double aux = importance_sampling.w.sum();
       expected_dist(i) =
-        importance_sampling.w.dot(importance_sampling.dist.cast<double>()) /
-          importance_sampling.w.sum();
+        importance_sampling.w.dot(importance_sampling.dist.cast<double>()) / aux;
       expected_Tdiff.row(i) =
-        (importance_sampling.Tdiff.transpose() * importance_sampling.w) /
-        importance_sampling.w.sum();
+        (importance_sampling.Tdiff.transpose() * importance_sampling.w) / aux;
     }
 
     /* M-step */
@@ -543,9 +551,7 @@ double MCEM_hcbn(
     Tdiff_colsum = weights * expected_Tdiff;
     model.set_lambda((Tdiff_colsum / W).array().inverse(), control_EM.max_lambda);
 
-    llhood = complete_log_likelihood(
-      model.get_lambda(), model.get_epsilon(), expected_Tdiff, expected_dist,
-      W);
+    llhood = obs_llhood.sum();
 
     avg_lambda_current +=  model.get_lambda();
     avg_eps_current += model.get_epsilon();
@@ -586,7 +592,7 @@ RcppExport SEXP _complete_log_likelihood(
     float W = as<float>(WSEXP);
 
     // Call the underlying C++ function
-    double res = complete_log_likelihood(lambda, eps, Tdiff, dist, W);
+    double res = complete_log_likelihood(lambda, eps, Tdiff, dist, W, false);
 
     // Return the result as a SEXP
     return wrap( res );

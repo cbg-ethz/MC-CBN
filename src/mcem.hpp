@@ -94,15 +94,16 @@ public:
   // Parametrized constructor
   Model(unsigned int p, float lambda_s=1.0, bool cycle=false,
         bool reduction=false) : poset(p), cycle(cycle), reduction_flag(reduction),
-        _lambda(p), _lambda_s(lambda_s), _size(p) {
+        _lambda(p), _lambda_s(lambda_s), _children(p), _size(p) {
     topo_path.reserve(p);
   }
 
   // Constructor using the edge iterator constructor
-  Model(const edge_container& edge_list, unsigned int p,  float lambda_s=1.0,
+  Model(const edge_container& edge_list, unsigned int p, float lambda_s=1.0,
          bool cycle=false, bool reduction=false) :
     poset(edge_list.begin(), edge_list.end(), p), cycle(cycle),
-    reduction_flag(reduction), _lambda(p), _lambda_s(lambda_s), _size(p) {
+    reduction_flag(reduction), _lambda(p), _lambda_s(lambda_s), _children(p),
+    _size(p) {
     topo_path.reserve(p);
   }
 
@@ -110,7 +111,7 @@ public:
   Model(const Model& m) : poset(m.poset), topo_path(m.topo_path),
   cycle(m.cycle), reduction_flag(m.reduction_flag), _lambda(m.get_lambda()),
   _lambda_s(m.get_lambda_s()), _epsilon(m.get_epsilon()),
-  _llhood(m.get_llhood()), _size(m.size()) {}
+  _llhood(m.get_llhood()), _children(m.get_children()), _size(m.size()) {}
 
   inline vertices_size_type size() const;
 
@@ -123,6 +124,8 @@ public:
 
   void set_llhood(const double llhood);
 
+  void set_children();
+
   inline VectorXd get_lambda() const;
 
   inline double get_lambda(const unsigned int idx) const;
@@ -133,13 +136,17 @@ public:
 
   inline double get_llhood() const;
 
+  inline const std::vector< std::unordered_set<Node> >& get_children() const;
+
   void has_cycles();
 
   void topological_sort();
 
+  std::unordered_set<Node> get_successors(Node u);
+
   std::vector<node_container> get_direct_successors(node_container& topo_order);
 
-  bool transitive_reduction_dag();
+  void transitive_reduction_dag();
 
   template <typename PropertyMap>
   void print_cover_relations(PropertyMap name);
@@ -153,6 +160,7 @@ protected:
   float _lambda_s;
   double _epsilon;
   double _llhood;
+  std::vector< std::unordered_set<Node> > _children;
   vertices_size_type _size;
 };
 
@@ -206,18 +214,22 @@ double Model::get_llhood() const {
   return _llhood;
 }
 
+const std::vector< std::unordered_set<Node> >& Model::get_children() const {
+  return _children;
+}
+
 DataImportanceSampling importance_weight(
     const RowVectorXb& genotype, const unsigned int L, const Model& model,
     const double time, const std::string& sampling, const unsigned int version,
     const VectorXd& scale_cumulative, const VectorXi& dist_pool,
     const MatrixXd& Tdiff_pool, Context::rng_type& rng,
-    const bool sampling_times_available);
+    const bool sampling_times_available=false);
 
 VectorXi hamming_dist_mat(const MatrixXb &x, const RowVectorXb &y);
 
 double complete_log_likelihood(
     const VectorXd &lambda, const double eps, const MatrixXd &Tdiff,
-    const VectorXd &dist, const float W);
+    const VectorXd &dist, const float W, const bool internal=true);
 
 double MCEM_hcbn(
     Model& model, const MatrixXb& obs, const VectorXd& times,
@@ -235,8 +247,12 @@ bool is_compatible(const RowVectorXb& genotype, const Model& model);
 int num_compatible_observations(const MatrixXb& obs, const Model& poset,
                                 const unsigned int N);
 
+int num_incompatible_events(const MatrixXb& genotype, const Model& poset);
+
 VectorXd rexp_std(const unsigned int N, const double lambda,
                   Context::rng_type& rng);
+
+int rdiscrete_std(const VectorXd weights, std::mt19937& rng);
 
 void handle_exceptions();
 
