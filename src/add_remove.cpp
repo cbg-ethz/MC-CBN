@@ -9,12 +9,11 @@
 #include <RcppEigen.h>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/graph_traits.hpp>
+#include <vector>
 #include "mcem.hpp"
 #include "not_acyclic_exception.hpp"
-#include <vector>
 
-int rdiscrete_std(const VectorXd weights, std::mt19937& rng) {
-
+int rdiscrete(const VectorXd& weights, Context::rng_type& rng) {
   std::discrete_distribution<int> distribution(weights.data(),
                                                weights.data() + weights.size());
   return distribution(rng);
@@ -114,7 +113,7 @@ RowVectorXb draw_sample(const RowVectorXb& genotype, const Model& model,
   switch (move) {
     case 0 :
       /* Pick an event to be added */
-      idx = rdiscrete_std(q_prob_inverse, rng);
+      idx = rdiscrete(q_prob_inverse, rng);
       q_choice = q_prob_inverse[idx] / q_prob_inverse.sum();
       sample[idx] = true;
       if (compatible)
@@ -124,7 +123,7 @@ RowVectorXb draw_sample(const RowVectorXb& genotype, const Model& model,
       break;
     case 1 :
       /* Pick an event to be removed */
-      idx = rdiscrete_std(q_prob, rng);
+      idx = rdiscrete(q_prob, rng);
       q_choice = q_prob[idx] / q_prob.sum();
       sample[idx] = false;
       if (compatible)
@@ -172,7 +171,7 @@ MatrixXd generate_mutation_times(
 
   /* Generate sampling times sampling_time ~ Exp(lambda_{s}) */
   if (!sampling_times_available)
-    sampling_time = rexp_std(N, model.get_lambda_s(), rng);
+    sampling_time = rexp(N, model.get_lambda_s(), rng);
   
   /* Loop through nodes in topological order */
   for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
@@ -190,12 +189,13 @@ MatrixXd generate_mutation_times(
         /* Mutation is observed
          * Z ~ TExp(lambda, 0, sampling_time - time{max parents})
          */
-        double time = rtexp(sampling_time[i] - T_max, model.get_lambda()[*v], rng);
+        // TODO: Draw many random numbers at once.
+        double time = rtexp(1, model.get_lambda()[*v], sampling_time[i] - T_max, rng)[0];
         dens[i] += dexp_log(time, model.get_lambda()[*v]) -
           pexp_log(sampling_time[i] - T_max, model.get_lambda()[*v]);
         T_events_sum(i, *v) =  T_max + time;
       } else {
-        VectorXd time = rexp_std(1, model.get_lambda()[*v], rng) ;
+        VectorXd time = rexp(1, model.get_lambda()[*v], rng) ;
         dens[i] += dexp_log(time[0], model.get_lambda()[*v]);
         T_events_sum(i, *v) = std::max(sampling_time[i], T_max) + time[0];
       }

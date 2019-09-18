@@ -18,8 +18,6 @@
   #include <omp.h>
 #endif
 
-using namespace Rcpp;
-
 class Initializer {
 public:
   Initializer() {
@@ -42,21 +40,21 @@ void handle_exceptions() {
 //' @noRd
 //' @param N number of samples to be drawn
 //' @param lambda rate
-VectorXd rexp_std(const unsigned int N, const double lambda,
-                  Context::rng_type& rng) {
-  std::exponential_distribution<double> distribution(lambda);
-  VectorXd T(N);
-
-  for (unsigned int i = 0; i < N; ++i)
-    T[i] = distribution(rng);
-
-  return T;
-}
+// VectorXd rexp_std(const unsigned int N, const double lambda,
+//                   Context::rng_type& rng) {
+//   std::exponential_distribution<double> distribution(lambda);
+//   VectorXd T(N);
+//
+//   for (unsigned int i = 0; i < N; ++i)
+//     T[i] = distribution(rng);
+//
+//   return T;
+// }
 
 //' @noRd
 //' @param N number of samples to be drawn
 std::vector<int> rdiscrete_std(const unsigned int N, const VectorXd weights,
-                               std::mt19937& rng) {
+                               Context::rng_type& rng) {
   std::discrete_distribution<int> distribution(weights.data(),
                                                weights.data() + weights.size());
   std::vector<int> ret(N);
@@ -69,7 +67,7 @@ std::vector<int> rdiscrete_std(const unsigned int N, const VectorXd weights,
 
 //' @noRd
 std::vector<int> runif_int_std(const unsigned int N, const int upper_limit,
-                               std::mt19937& rng) {
+                               Context::rng_type& rng) {
 
   std::uniform_int_distribution<int> distribution(0, upper_limit);
   std::vector<int> ret(N);
@@ -153,11 +151,11 @@ MatrixXb sample_genotypes(
 
   /* Generate occurence times T_events_{j} ~ Exp(lambda_{j}) */
   for (unsigned int j = 0; j < p; ++j)
-    T_events.col(j) = rexp_std(N, model.get_lambda(j), rng);
+    T_events.col(j) = rexp(N, model.get_lambda(j), rng);
 
   /* Use sampling times when available */
   if (!sampling_times_available)
-    T_sampling = rexp_std(N, model.get_lambda_s(), rng);
+    T_sampling = rexp(N, model.get_lambda_s(), rng);
 
   /* Loop through nodes in topological order */
   for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
@@ -194,7 +192,7 @@ MatrixXd sample_times(
 
   /* Generate occurence times T_events_{j} ~ Exp(lambda_{j}) */
   for (unsigned int j = 0; j < p; ++j)
-    T_events.col(j) = rexp_std(N, model.get_lambda(j), rng);
+    T_events.col(j) = rexp(N, model.get_lambda(j), rng);
 
   /* Loop through nodes in topological order */
   for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
@@ -225,7 +223,7 @@ MatrixXb generate_genotypes(
   obs.setConstant(N, p, false);
 
   if (!sampling_times_available)
-    T_sampling = rexp_std(N, model.get_lambda_s(), rng);
+    T_sampling = rexp(N, model.get_lambda_s(), rng);
 
   /* Loop through nodes in topological order */
   for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
@@ -287,13 +285,13 @@ double obs_log_likelihood(
           T_sampling.setConstant(times[i]);
 
         MatrixXb genotype_pool = 
-          generate_genotypes(T_pool, model, T_sampling, rngs[omp_get_thread_num()],
+          generate_genotypes(T_pool, model, T_sampling, (*rngs)[omp_get_thread_num()],
                              sampling_times_available);
         d_pool = hamming_dist_mat(genotype_pool, obs.row(i));
       }
       DataImportanceSampling importance_sampling = importance_weight(
         obs.row(i), L, model, times[i], sampling, version, scale_cumulative,
-        d_pool, Tdiff_pool, rngs[omp_get_thread_num()],
+        d_pool, Tdiff_pool, (*rngs)[omp_get_thread_num()],
         sampling_times_available);
       llhood += std::log(importance_sampling.w.sum() / L);
     }
@@ -339,7 +337,6 @@ DataImportanceSampling importance_weight(
 
   /* Initialization and instantiation of variables */
   const vertices_size_type p = model.size(); // Number of mutations / events
-  MatrixXb samples(L, p);
   DataImportanceSampling importance_sampling(L, p);
 
   if (sampling == "forward") {
@@ -347,6 +344,7 @@ DataImportanceSampling importance_weight(
      * In particular, epsilon is zero (default value) - because the idea is to
      * generate samples of X (true genotype)
      */
+    MatrixXb samples(L, p);
     VectorXd T_sampling(L);
     if (sampling_times_available)
       T_sampling.setConstant(time);
@@ -354,10 +352,13 @@ DataImportanceSampling importance_weight(
     samples = sample_genotypes(L, model, importance_sampling.Tdiff, T_sampling,
                                rng, sampling_times_available);
     importance_sampling.dist = hamming_dist_mat(samples, genotype);
+    // importance_sampling.w = pow(model.get_epsilon(), importance_sampling.dist.array()) *
+    //   pow(1 - model.get_epsilon(), p - importance_sampling.dist.array());
     VectorXd d = importance_sampling.dist.cast<double>();
     importance_sampling.w = pow(model.get_epsilon(), d.array()) *
       pow(1 - model.get_epsilon(), p - d.array());
   } else if (sampling == "add-remove") {
+    MatrixXb samples(L, p);
     VectorXd log_prob_Y_X(L);
     VectorXd log_prob_X(L);
     VectorXd log_proposal(L);
@@ -394,6 +395,8 @@ DataImportanceSampling importance_weight(
     importance_sampling.w =
       (log_prob_Y_X + log_prob_X - log_proposal).array().exp();
   } else if (sampling == "rejection") {
+    // VectorXd q_prob = pow(model.get_epsilon(), dist_pool.array()) *
+    //   pow(1 - model.get_epsilon(), p - dist_pool.array());
     VectorXd d_pool = dist_pool.cast<double>();
     VectorXd q_prob = pow(model.get_epsilon(), d_pool.array()) *
       pow(1 - model.get_epsilon(), p - d_pool.array());
@@ -529,13 +532,13 @@ double MCEM_hcbn(
           T_sampling.setConstant(times(i));
 
         MatrixXb genotype_pool =
-          generate_genotypes(T_pool, model, T_sampling, rngs[omp_get_thread_num()],
+          generate_genotypes(T_pool, model, T_sampling, (*rngs)[omp_get_thread_num()],
                              sampling_times_available);
         d_pool = hamming_dist_mat(genotype_pool, obs.row(i));
       }
       DataImportanceSampling importance_sampling = importance_weight(
         obs.row(i), L, model, times(i), sampling, version, scale_cumulative,
-        d_pool, Tdiff_pool, rngs[omp_get_thread_num()],
+        d_pool, Tdiff_pool, (*rngs)[omp_get_thread_num()],
         sampling_times_available);
 
       obs_llhood(i) = std::log(importance_sampling.w.sum() / L);
@@ -583,6 +586,7 @@ double MCEM_hcbn(
 RcppExport SEXP _complete_log_likelihood(
     SEXP lambdaSEXP, SEXP epsSEXP, SEXP TdiffSEXP, SEXP distSEXP, SEXP WSEXP) {
 
+  using namespace Rcpp;
   try {
     // Convert input to C++ types
     const MapVecd lambda(as<MapVecd>(lambdaSEXP));
@@ -608,6 +612,7 @@ RcppExport SEXP _obs_log_likelihood(
     SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP, SEXP thrdsSEXP,
     SEXP seedSEXP) {
 
+  using namespace Rcpp;
   try {
     // Convert input to C++ types
     const MatrixXb& obs = as<MatrixXb>(obsSEXP);
@@ -650,6 +655,7 @@ RcppExport SEXP _MCEM_hcbn(
     SEXP sampling_times_availableSEXP, SEXP thrdsSEXP, SEXP verboseSEXP,
     SEXP seedSEXP) {
 
+  using namespace Rcpp;
   try {
     // Convert input to C++ types
     VectorXd ilambda = as<MapVecd>(ilambdaSEXP);
@@ -704,6 +710,7 @@ RcppExport SEXP _importance_weight_genotype(
     SEXP scale_cumulativeSEXP, SEXP d_poolSEXP, SEXP Tdiff_poolSEXP,
     SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP, SEXP seedSEXP) {
 
+  using namespace Rcpp;
   try {
     // Convert input to C++ types
     const RowVectorXb& genotype = as<RowVectorXb>(genotypeSEXP);
@@ -751,6 +758,7 @@ RcppExport SEXP _importance_weight(
     SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP, SEXP thrdsSEXP,
     SEXP seedSEXP) {
 
+  using namespace Rcpp;
   try {
     // Convert input to C++ types
     const MatrixXb& obs = as<MatrixXb>(obsSEXP);
@@ -810,14 +818,14 @@ RcppExport SEXP _importance_weight(
           T_sampling.setConstant(times[i]);
 
         MatrixXb genotype_pool =
-          generate_genotypes(T_pool, M, T_sampling, rngs[omp_get_thread_num()],
+          generate_genotypes(T_pool, M, T_sampling, (*rngs)[omp_get_thread_num()],
                              sampling_times_available);
         d_pool = hamming_dist_mat(genotype_pool, obs.row(i));
       }
       // Call the underlying C++ function
       DataImportanceSampling w = importance_weight(
         obs.row(i), L, M, times(i), sampling, version, scale_cumulative,
-        d_pool, Tdiff_pool, rngs[omp_get_thread_num()],
+        d_pool, Tdiff_pool, (*rngs)[omp_get_thread_num()],
         sampling_times_available);
 
       w_sum[i] = w.w.sum();
@@ -840,6 +848,7 @@ RcppExport SEXP _sample_genotypes(
     SEXP T_samplingSEXP, SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP,
     SEXP seedSEXP) {
 
+  using namespace Rcpp;
   try {
     // Convert input to C++ types
     const unsigned int N = as<unsigned int>(NSEXP);
@@ -878,6 +887,7 @@ RcppExport SEXP _sample_times(
     SEXP NSEXP, SEXP posetSEXP, SEXP lambdaSEXP, SEXP T_eventsSEXP,
     SEXP seedSEXP) {
 
+  using namespace Rcpp;
   try {
     // Convert input to C++ types
     const unsigned int N = as<unsigned int>(NSEXP);
@@ -911,6 +921,7 @@ RcppExport SEXP _generate_genotypes(
     SEXP T_events_sumSEXP, SEXP posetSEXP, SEXP T_samplingSEXP,
     SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP, SEXP seedSEXP) {
 
+  using namespace Rcpp;
   try {
     // Convert input to C++ types
     const MapMatd T_events_sum(as<MapMatd>(T_events_sumSEXP));

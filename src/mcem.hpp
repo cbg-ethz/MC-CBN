@@ -13,8 +13,10 @@
 #include <RcppEigen.h>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/graph_traits.hpp>
+#include <boost/ptr_container/ptr_vector.hpp>
 #include <random>
 #include <vector>
+#include <memory>
 
 using Eigen::Map;
 using Eigen::VectorXd;
@@ -36,48 +38,31 @@ typedef std::pair<vertices_size_type, vertices_size_type> Edge;
 typedef std::vector<Node> node_container;
 typedef std::vector<Edge> edge_container;
 
+#include "rng_utils.hpp"
+
 class Context {
 public:
-  typedef std::mt19937 rng_type;
-  typedef std::vector<rng_type> rng_vector_type;
+  typedef ::rng_type rng_type;
+  typedef boost::ptr_vector<rng_type> rng_vector_type;
 
   rng_type rng;
 
-  Context(int seed, bool verbose=false): _verbose(verbose) {
-    _set_seed(rng, seed);
-  }
+  Context(int seed, bool verbose=false): rng(seed), _verbose(verbose) {}
 
   inline bool get_verbose() const {
     return _verbose;
   }
 
-  rng_type get_auxiliary_rng() {
-    rng_type aux_rng;
-    _set_seed(aux_rng, rng());
-    return aux_rng;
-  }
-
-  rng_vector_type get_auxiliary_rngs(int num_rngs) {
-    std::vector<rng_type> rngs;
-    rngs.reserve(num_rngs);
+  std::unique_ptr<rng_vector_type> get_auxiliary_rngs(int num_rngs) {
+    std::unique_ptr<rng_vector_type> rngs(new rng_vector_type());
+    rngs->reserve(num_rngs);
     for (int t = 0; t < num_rngs; ++t)
-      rngs.push_back(get_auxiliary_rng());
-    return rngs;
+      rngs->push_back(new rng_type(rng()));
+    return std::move(rngs);
   }
 
 protected:
   bool _verbose;
-
-  static void _set_seed(rng_type& rng, int seed) {
-    std::ranlux24_base seeder_rng = std::ranlux24_base(seed);
-
-    // adapted from https://stackoverflow.com/a/15509942
-    std::array<int, std::mt19937::state_size> seed_data;
-    std::generate_n(seed_data.data(), seed_data.size(), std::ref(seeder_rng));
-    std::seed_seq seq(std::begin(seed_data), std::end(seed_data));
-
-    rng.seed(seq);
-  }
 };
 
 class Model {
@@ -249,10 +234,11 @@ int num_compatible_observations(const MatrixXb& obs, const Model& poset,
 
 int num_incompatible_events(const MatrixXb& genotype, const Model& poset);
 
-VectorXd rexp_std(const unsigned int N, const double lambda,
-                  Context::rng_type& rng);
+/*VectorXd rexp_std(const unsigned int N, const double lambda,
+                  Context::rng_type& rng);*/
 
-int rdiscrete_std(const VectorXd weights, std::mt19937& rng);
+//int rdiscrete_std(const VectorXd weights, std::mt19937& rng);
+int rdiscrete(const VectorXd& weights, Context::rng_type& rng);
 
 void handle_exceptions();
 
