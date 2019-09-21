@@ -35,6 +35,7 @@ obs.loglikelihood <- function(
     times <- numeric(N)
     sampling.times.available <- FALSE
   } else {
+    lambda.s <- 1 / mean(times)
     sampling.times.available <- TRUE
     if (length(times) != N)
       stop("A vector of length ",  N, " is expected")
