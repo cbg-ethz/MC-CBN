@@ -245,7 +245,7 @@ double obs_log_likelihood(
 
   const auto p = poset.rows(); // Number of mutations / events
   const auto N = obs.rows();   // Number of observations / genotypes
-  double llhood = 0;
+  double llhood = 0.0;
 
   edge_container edge_list = adjacency_mat2list(poset);
   Model model(edge_list, p, lambda_s);
@@ -449,12 +449,11 @@ double MCEM_hcbn(
   unsigned int update_step_size = control_EM.update_step_size;
   VectorXd avg_lambda = VectorXd::Zero(p);
   VectorXd avg_lambda_current = VectorXd::Zero(p);
-  double avg_eps = 0, avg_llhood = 0, llhood = 0;
-  double avg_eps_current = 0;
+  double avg_eps = 0.0, avg_llhood = 0.0, obs_llhood = 0.0;
+  double avg_eps_current = 0.0;
   bool tol_comparison = true;
-  VectorXd expected_dist(N);
+  double expected_dist = 0.0;
   MatrixXd expected_Tdiff(N, p);
-  VectorXd obs_llhood(N);
   VectorXd Tdiff_colsum(p);
   MatrixXd Tdiff_pool;
   VectorXd scale_cumulative;
@@ -501,8 +500,8 @@ double MCEM_hcbn(
 
       /* Restart averaging */
       avg_lambda_current = VectorXd::Zero(p);
-      avg_eps_current = 0;
-      avg_llhood = 0;
+      avg_eps_current = 0.0;
+      avg_llhood = 0.0;
     }
 
     /* E step
@@ -518,12 +517,15 @@ double MCEM_hcbn(
       T_pool = sample_times(K, model, Tdiff_pool, ctx.rng);
     }
 
+    obs_llhood = 0.0;
+    expected_dist = 0.0;
+
     #ifdef _OPENMP
       omp_set_num_threads(thrds);
     #endif
     auto rngs = ctx.get_auxiliary_rngs(thrds);
 
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for reduction(+:obs_llhood) reduction(+:expected_dist) schedule(static)
     for (unsigned int i = 0; i < N; ++i) {
       VectorXi d_pool;
       if (sampling == "rejection") {
@@ -541,24 +543,22 @@ double MCEM_hcbn(
         d_pool, Tdiff_pool, (*rngs)[omp_get_thread_num()],
         sampling_times_available);
 
-      obs_llhood(i) = std::log(importance_sampling.w.sum() / L);
       double aux = importance_sampling.w.sum();
-      expected_dist(i) =
+      obs_llhood += std::log(aux / L);
+      expected_dist +=
         importance_sampling.w.dot(importance_sampling.dist.cast<double>()) / aux;
       expected_Tdiff.row(i) =
         (importance_sampling.Tdiff.transpose() * importance_sampling.w) / aux;
     }
 
     /* M-step */
-    model.set_epsilon(expected_dist.sum() / (N * p));
+    model.set_epsilon(expected_dist / (N * p));
     Tdiff_colsum = weights * expected_Tdiff;
     model.set_lambda((Tdiff_colsum / W).array().inverse(), control_EM.max_lambda);
 
-    llhood = obs_llhood.sum();
-
     avg_lambda_current +=  model.get_lambda();
     avg_eps_current += model.get_epsilon();
-    avg_llhood += llhood;
+    avg_llhood += obs_llhood;
 
     if (iter + 1 == control_EM.max_iter) {
       unsigned int num_iter = control_EM.max_iter - update_step_size +
@@ -571,7 +571,7 @@ double MCEM_hcbn(
     if (ctx.get_verbose()) {
       if (iter == 0)
         std::cout << "llhood\tepsilon\tlambdas" << std::endl;
-      std::cout << llhood << "\t" << model.get_epsilon() << "\t"
+      std::cout << obs_llhood << "\t" << model.get_epsilon() << "\t"
                 << model.get_lambda().transpose() << std::endl;
     }
   }
