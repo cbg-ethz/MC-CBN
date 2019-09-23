@@ -135,26 +135,16 @@ RowVectorXb draw_sample(const RowVectorXb& genotype, const Model& model,
   return sample;
 }
 
-
-double rtexp(double time, double rate, std::mt19937& rng) {
-  std::uniform_real_distribution<double> distribution(0.0, 1.0);
-  double u = distribution(rng);
-
-  double ret =
-    time > 0 ? -std::log1p( u * std::expm1(-time * rate)) / rate : 0.0;
-  return ret;
-}
-
 /* Probability density function of an exponential distribution in log scale */
-double dexp_log(double time, double rate) {
-  double ret = std::log(rate) - rate * time;
+VectorXd dexp_log(const VectorXd& time, double rate) {
+  VectorXd ret = std::log(rate) - (rate * time).array();
   return ret;
 }
 
 /* Cumulative distribution function of an exponential distribution in log scale */
-double pexp_log(double time, double rate) {
-  double ret = - std::expm1(-time * rate);
-  ret = std::log(ret);
+VectorXd pexp_log(VectorXd& time, double rate) {
+  // FIXME: -(-rate * time).array().expm1().array().log()
+  VectorXd ret = (1 - (-rate * time).array().exp()).array().log();
   return ret;
 }
 
@@ -164,45 +154,48 @@ MatrixXd generate_mutation_times(
     const bool sampling_times_available=false) {
 
   unsigned int N = obs.rows();
-  MatrixXd T_events;
-  MatrixXd T_events_sum;
-  T_events.setZero(N, obs.cols());
-  T_events_sum.setZero(N, obs.cols());
+  unsigned int p = obs.cols();
+  MatrixXd time_events = MatrixXd::Zero(N, p);
+  MatrixXd time_events_sum = MatrixXd::Zero(N, p);
+  MatrixXd cutoff = MatrixXd::Zero(N, p);
 
   /* Generate sampling times sampling_time ~ Exp(lambda_{s}) */
   if (!sampling_times_available)
     sampling_time = rexp(N, model.get_lambda_s(), rng);
   
+  std::vector<node_container> parents = model.get_direct_predecessors();
   /* Loop through nodes in topological order */
   for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
        v != model.topo_path.rend(); ++v) {
-    for (unsigned int i = 0; i < N; ++i) {
-      double T_max = 0.0;
-      /* Loop through parents of node v */
-      boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
-      for (boost::tie(in_begin, in_end) = boost::in_edges(*v, model.poset);
-           in_begin != in_end; ++in_begin)
-        if (T_events_sum(i, source(*in_begin, model.poset)) > T_max)
-          T_max = T_events_sum(i, source(*in_begin, model.poset));
+    /* Alternative vec1.cwiseMax(vec2)
+     * see https://eigen.tuxfamily.org/dox/group__QuickRefPage.html)
+     */
+    VectorXd time_parents_max = VectorXd::Zero(N);
+    if (!parents[*v].empty()) {
+      MatrixXd aux1 = MatrixXd::Zero(N, parents[*v].size());
 
-      if (obs(i, *v)) {
-        /* Mutation is observed
-         * Z ~ TExp(lambda, 0, sampling_time - time{max parents})
-         */
-        // TODO: Draw many random numbers at once.
-        double time = rtexp(1, model.get_lambda()[*v], sampling_time[i] - T_max, rng)[0];
-        dens[i] += dexp_log(time, model.get_lambda()[*v]) -
-          pexp_log(sampling_time[i] - T_max, model.get_lambda()[*v]);
-        T_events_sum(i, *v) =  T_max + time;
-      } else {
-        VectorXd time = rexp(1, model.get_lambda()[*v], rng) ;
-        dens[i] += dexp_log(time[0], model.get_lambda()[*v]);
-        T_events_sum(i, *v) = std::max(sampling_time[i], T_max) + time[0];
-      }
-      T_events(i, *v) = T_events_sum(i, *v) - T_max;   
+      for (unsigned int u = 0; u < parents[*v].size(); ++u)
+        aux1.col(u) = time_events_sum.col(parents[*v][u]);
+      time_parents_max = aux1.rowwise().maxCoeff();
     }
+
+    /* if x = 1, Z ~ TExp(lambda, 0, sampling_time - time{max parents})
+     * if x = 0, Z ~ TExp(lambda, 0, inf)
+     */
+    VectorXd cutoff = obs.col(*v).select(sampling_time - time_parents_max,
+                              std::numeric_limits<double>::infinity());
+    // VectorXd cutoff = obs.col(*v).select(sampling_time - time_parents_max, 1e9);
+    VectorXd time = rtexp(N, model.get_lambda()[*v], cutoff, rng);
+
+    VectorXd aux2 = obs.col(*v).select(time_parents_max,
+                            time_parents_max.cwiseMax(sampling_time));
+    time_events_sum.col(*v) = aux2 + time;
+    time_events.col(*v) = time_events_sum.col(*v) - time_parents_max;
+
+    dens += dexp_log(time, model.get_lambda()[*v]) -
+      pexp_log(cutoff, model.get_lambda()[*v]);
   }
-  return T_events;
+  return time_events;
 }
 
 

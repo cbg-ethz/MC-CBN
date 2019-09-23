@@ -18,13 +18,15 @@ using Eigen::VectorXd;
 #define MKL_ENABLED
 
 template <typename RNG_TYPE>
-VectorXd rtexp(const unsigned int N, const double rate,
-               const double cutoff, RNG_TYPE& rng);
+VectorXd rtexp(const unsigned int N, const double rate, const VectorXd& cutoff,
+               RNG_TYPE& rng);
 
 template <typename RNG_TYPE>
 VectorXd rexp(const unsigned int N, const double rate, RNG_TYPE& rng) {
   double inf = std::numeric_limits<double>::infinity();
-  return rtexp(N, rate, inf, rng);
+  VectorXd aux(N);
+  aux.setConstant(inf);
+  return rtexp(N, rate, aux, rng);
 }
 
 #ifdef MKL_ENABLED
@@ -73,7 +75,7 @@ typedef MklRng rng_type;
 
 template <>
 VectorXd rtexp<MklRng>(const unsigned int N, const double rate,
-                       const double cutoff, MklRng& rng);
+                       const VectorXd& cutoff, MklRng& rng);
 
 #else
 
@@ -121,7 +123,7 @@ typedef StdRng rng_type;
 
 template <>
 VectorXd rtexp<StdRng>(const unsigned int N, const double rate,
-                       const double cutoff, StdRng& rng);
+                       const VectorXd& cutoff, StdRng& rng);
 
 #endif
 

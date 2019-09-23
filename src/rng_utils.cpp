@@ -14,15 +14,18 @@
 
 template <>
 VectorXd rtexp<MklRng>(const unsigned int N, const double rate,
-                                  const double cutoff, MklRng& rng) {
-  std::vector<double> result(N), temp(N);
-  
+                       const VectorXd& cutoff, MklRng& rng) {
+  std::vector<double> result(N), rand(N), temp(N);
+
   VSLStreamStatePtr stream = rng.get_stream();
-  
+
   if (VSL_STATUS_OK != vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD_ACCURATE,
-                                    stream, N, temp.data(), 0.0, 1.0))
+                                    stream, N, rand.data(), 0.0, 1.0))
     throw std::runtime_error("Something went wrong!");
-  cblas_daxpy(N, std::expm1(-cutoff * rate), temp.data(), 1, result.data(), 1);
+
+  VectorXd exponent = -rate * cutoff;
+  vdExpm1(N, exponent.data(), temp.data());
+  vdMul(N, temp.data(), rand.data(), result.data());
   
   std::swap(temp, result);
   vdLog1p(N, temp.data(), result.data());
@@ -40,13 +43,13 @@ VectorXd rtexp<MklRng>(const unsigned int N, const double rate,
 
 template <>
 VectorXd rtexp<StdRng>(const unsigned int N, const double rate,
-                                  const double cutoff, StdRng& rng) {
+                       const VectorXd& cutoff, StdRng& rng) {
   std::uniform_real_distribution<double> distribution(0.0, 1.0);
   VectorXd result(N);
 
   for (unsigned int i = 0; i < N; ++i) {
     double u = distribution(rng.get_rng());
-    result[i] = -std::log1p(u * std::expm1(-cutoff * rate)) / rate;
+    result[i] = -std::log1p(u * std::expm1(-cutoff[i] * rate)) / rate;
   }
 
   return result;
