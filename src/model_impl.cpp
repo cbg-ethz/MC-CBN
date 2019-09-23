@@ -71,6 +71,24 @@ void Model::print_cover_relations(PropertyMap name) {
               << get(name, target(*ei, poset)) << std::endl;
 }
 
+//' @description Obtain (direct) predecessors/parents per node
+std::vector<node_container> Model::get_direct_predecessors() const {
+
+  std::vector<node_container> parents(_size);
+  /* Loop through nodes in topological order */
+  for (node_container::const_reverse_iterator v = topo_path.rbegin();
+       v != topo_path.rend(); ++v) {
+    /* Loop through (direct) predecessors/parents of node v */
+    boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
+    for (boost::tie(in_begin, in_end) = boost::in_edges(*v, poset);
+         in_begin != in_end; ++in_begin) {
+      Node u = source(*in_begin, poset);
+      parents[*v].push_back(u);
+    }
+  }
+  return parents;
+}
+
 //' @description Obtain all successors per node.
 void Model::set_children() {
 

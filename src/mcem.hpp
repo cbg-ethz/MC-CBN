@@ -121,6 +121,8 @@ public:
 
   inline double get_llhood() const;
 
+  std::vector<node_container> get_direct_predecessors() const;
+
   inline const std::vector< std::unordered_set<Node> >& get_children() const;
 
   void has_cycles();
