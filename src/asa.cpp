@@ -155,9 +155,9 @@ double propose_edge(
     double& fraction_compatible, const VectorXd& times,
     const RowVectorXd& weights, const float T, int& num_accept,
     const float factor_fraction_compatible, const unsigned int L,
-    const std::string& sampling, const unsigned int version,
-    const ControlEM& control_EM, const bool sampling_times_available,
-    const unsigned int thrds, Context& ctx) {
+    const std::string& sampling, const ControlEM& control_EM,
+    const bool sampling_times_available, const unsigned int thrds,
+    Context& ctx) {
   
   const vertices_size_type p = M.size();  // Number of mutations / events
   const auto N = obs.rows();              // Number of observations / genotypes
@@ -380,7 +380,7 @@ double propose_edge(
 
   /* Compute likelihood of the proposed/new poset */
   llhood_new = MCEM_hcbn(
-    M_new, obs, times, weights, L, sampling, version, control_EM,
+    M_new, obs, times, weights, L, sampling, control_EM,
     sampling_times_available, thrds, ctx);
 
   /* Accept the proposed poset, if it improves the likelihood */
@@ -420,9 +420,9 @@ double propose_edge(
 double simulated_annealing(
     Model& poset, const MatrixXb& obs, const VectorXd& times,
     const RowVectorXd& weights, ControlSA& control_ASA, const unsigned int L,
-    const std::string& sampling, const unsigned int version,
-    const ControlEM& control_EM, const bool sampling_times_available,
-    const unsigned int thrds, Context& ctx) {
+    const std::string& sampling, const ControlEM& control_EM,
+    const bool sampling_times_available, const unsigned int thrds,
+    Context& ctx) {
 
   const auto N = obs.rows();   // Number of observations / genotypes
   float acceptace_rate_current;
@@ -431,7 +431,7 @@ double simulated_annealing(
 
   /* 1. Compute likelihood of the initial model */
   double llhood = MCEM_hcbn(
-    poset, obs, times, weights, L, sampling, version, control_EM,
+    poset, obs, times, weights, L, sampling, control_EM,
     sampling_times_available, thrds, ctx);
 
   /* 2. Compute the fraction of compatible observations/genotypes with the
@@ -475,7 +475,7 @@ double simulated_annealing(
     llhood = propose_edge(
       poset, obs, llhood, fraction_compatible, times, weights, control_ASA.T,
       num_accept, control_ASA.get_compatible_fraction_factor(), L, sampling,
-      version, control_EM, sampling_times_available, thrds, ctx);
+      control_EM, sampling_times_available, thrds, ctx);
 
     if (ctx.get_verbose())
       poset.print_cover_relations();
@@ -517,7 +517,7 @@ double simulated_annealing(
                          control_EM.update_step_size * 2, control_EM.tol,
                          control_EM.max_lambda);
   llhood = MCEM_hcbn(
-    poset, obs, times, weights, L, sampling, version, control_last,
+    poset, obs, times, weights, L, sampling, control_last,
     sampling_times_available, thrds, ctx);
 
   outfile_temperature.close();
@@ -527,27 +527,22 @@ double simulated_annealing(
 
 RcppExport SEXP _adaptive_simulated_annealing(
     SEXP posetSEXP, SEXP obsSEXP, SEXP timesSEXP, SEXP lambda_sSEXP,
-    SEXP weightsSEXP, SEXP LSEXP, SEXP samplingSEXP, SEXP versionSEXP,
-    SEXP max_iter_EMSEXP, SEXP update_step_sizeSEXP, SEXP tolSEXP,
-    SEXP max_lambdaSEXP, SEXP T0SEXP, SEXP adap_rateSEXP,
-    SEXP acceptance_rateSEXP, SEXP step_sizeSEXP, SEXP max_iter_ASASEXP,
-    SEXP adaptiveSEXP, SEXP outdirSEXP, SEXP sampling_times_availableSEXP,
-    SEXP thrdsSEXP, SEXP verboseSEXP, SEXP seedSEXP) {
+    SEXP weightsSEXP, SEXP LSEXP, SEXP samplingSEXP, SEXP max_iter_EMSEXP,
+    SEXP update_step_sizeSEXP, SEXP tolSEXP, SEXP max_lambdaSEXP, SEXP T0SEXP,
+    SEXP adap_rateSEXP, SEXP acceptance_rateSEXP, SEXP step_sizeSEXP,
+    SEXP max_iter_ASASEXP, SEXP neighborhood_distSEXP, SEXP adaptiveSEXP,
+    SEXP outdirSEXP, SEXP sampling_times_availableSEXP, SEXP thrdsSEXP,
+    SEXP verboseSEXP, SEXP seedSEXP) {
   
   try {
     /* Convert input to C++ types */
-    // NOTE: Probably it is better to use Map, and return List with
-    // poset and params
     MatrixXi poset = as<MapMati>(posetSEXP);
-    // MatrixXi poset = as<MatrixXi>(posetSEXP);
-    // MapMati poset(as<MapMati>(posetSEXP));
     const MatrixXb& obs = as<MatrixXb>(obsSEXP);
     const MapVecd times(as<MapVecd>(timesSEXP));
     const float lambda_s = as<float>(lambda_sSEXP);
     const MapRowVecd weights(as<MapRowVecd>(weightsSEXP));
     const unsigned int L = as<unsigned int>(LSEXP);
     const std::string& sampling = as<std::string>(samplingSEXP);
-    const unsigned int version = as<unsigned int>(versionSEXP);
     const unsigned int max_iter_EM = as<unsigned int>(max_iter_EMSEXP);
     const unsigned int update_step_size = as<unsigned int>(update_step_sizeSEXP);
     const double tol = as<double>(tolSEXP);
@@ -557,6 +552,7 @@ RcppExport SEXP _adaptive_simulated_annealing(
     const float acceptance_rate = as<float>(acceptance_rateSEXP);
     const int step_size = as<int>(step_sizeSEXP);
     const unsigned int max_iter_ASA = as<unsigned int>(max_iter_ASASEXP);
+    const unsigned int neighborhood_dist = as<unsigned int>(neighborhood_distSEXP);
     const bool adaptive = as<bool>(adaptiveSEXP);
     const std::string& outdir = as<std::string>(outdirSEXP);
     const bool sampling_times_available = as<bool>(sampling_times_availableSEXP);
@@ -576,14 +572,15 @@ RcppExport SEXP _adaptive_simulated_annealing(
     initialize_lambda(M, obs, max_lambda);
     M.set_epsilon((double) num_incompatible_events(obs, M) / (obs.rows() * p));
 
-    ControlEM control_EM(max_iter_EM, update_step_size, tol, max_lambda);
+    ControlEM control_EM(max_iter_EM, update_step_size, tol, max_lambda,
+                         neighborhood_dist);
     ControlSA control_ASA(outdir, acceptance_rate, T0, adap_rate, step_size,
                           max_iter_ASA, adaptive);
 
     /* Call the underlying C++ function */
     Context ctx(seed, verbose);
     double llhood = simulated_annealing(
-      M, obs, times, weights, control_ASA, L, sampling, version, control_EM,
+      M, obs, times, weights, control_ASA, L, sampling, control_EM,
       sampling_times_available, thrds, ctx);
     
     /* Return the result as a SEXP */

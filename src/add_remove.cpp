@@ -184,7 +184,6 @@ MatrixXd generate_mutation_times(
      */
     VectorXd cutoff = obs.col(*v).select(sampling_time - time_parents_max,
                               std::numeric_limits<double>::infinity());
-    // VectorXd cutoff = obs.col(*v).select(sampling_time - time_parents_max, 1e9);
     VectorXd time = rtexp(N, model.get_lambda()[*v], cutoff, rng);
 
     VectorXd aux2 = obs.col(*v).select(time_parents_max,
@@ -295,7 +294,7 @@ RcppExport SEXP _generate_mutation_times(
     
     Context ctx(seed);
     // Call the underlying C++ function
-    VectorXd proposal_dens(obs.rows());
+    VectorXd proposal_dens = VectorXd::Zero(obs.rows());
     MatrixXd Tdiff = generate_mutation_times(obs, M, proposal_dens, time,
                                              ctx.rng, sampling_times_available);
 
