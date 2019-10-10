@@ -170,11 +170,13 @@ public:
   unsigned int update_step_size; // increase L every 'update_step_size' to reach a desirable 'tol'
   double tol;                    // convergence tolerance
   float max_lambda;
+  unsigned int neighborhood_dist;
 
   ControlEM(unsigned int max_iter=100, unsigned int update_step_size=20,
-            double tol=0.001, float max_lambda=1e6) :
+            double tol=0.001, float max_lambda=1e6,
+            unsigned int neighborhood_dist=1) :
     max_iter(max_iter), update_step_size(update_step_size), tol(tol),
-    max_lambda(max_lambda) {}
+    max_lambda(max_lambda), neighborhood_dist(neighborhood_dist) {}
 };
 
 vertices_size_type Model::size() const {
@@ -206,11 +208,11 @@ const std::vector< std::unordered_set<Node> >& Model::get_children() const {
 }
 
 DataImportanceSampling importance_weight(
-    const RowVectorXb& genotype, const unsigned int L, const Model& model,
-    const double time, const std::string& sampling, const unsigned int version,
+    const RowVectorXb& genotype, unsigned int L, const Model& model,
+    const double time, const std::string& sampling,
     const VectorXd& scale_cumulative, const VectorXi& dist_pool,
-    const MatrixXd& Tdiff_pool, Context::rng_type& rng,
-    const bool sampling_times_available=false);
+    const MatrixXd& Tdiff_pool, const unsigned int neighborhood_dist,
+    Context::rng_type& rng, const bool sampling_times_available=false);
 
 VectorXi hamming_dist_mat(const MatrixXb &x, const RowVectorXb &y);
 
@@ -221,9 +223,13 @@ double complete_log_likelihood(
 double MCEM_hcbn(
     Model& model, const MatrixXb& obs, const VectorXd& times,
     const RowVectorXd& weights, const unsigned int L,
-    const std::string& sampling, const unsigned int version,
-    const ControlEM& control_EM, const bool sampling_times_available,
-    const unsigned int thrds, Context& ctx);
+    const std::string& sampling, const ControlEM& control_EM,
+    const bool sampling_times_available, const unsigned int thrds,
+    Context& ctx);
+
+unsigned int n_choose_k(unsigned int n, unsigned int k);
+
+void choices(const unsigned int p, unsigned int k, Eigen::Ref<MatrixXb> output_mat);
 
 edge_container adjacency_mat2list(const MatrixXi& poset);
 
@@ -236,10 +242,6 @@ int num_compatible_observations(const MatrixXb& obs, const Model& poset,
 
 int num_incompatible_events(const MatrixXb& genotype, const Model& poset);
 
-/*VectorXd rexp_std(const unsigned int N, const double lambda,
-                  Context::rng_type& rng);*/
-
-//int rdiscrete_std(const VectorXd weights, std::mt19937& rng);
 int rdiscrete(const VectorXd& weights, Context::rng_type& rng);
 
 void handle_exceptions();
