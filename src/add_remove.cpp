@@ -13,12 +13,6 @@
 #include "mcem.hpp"
 #include "not_acyclic_exception.hpp"
 
-int rdiscrete(const VectorXd& weights, Context::rng_type& rng) {
-  std::discrete_distribution<int> distribution(weights.data(),
-                                               weights.data() + weights.size());
-  return distribution(rng);
-}
-
 VectorXd scale_path_to_mutation(const Model& model) {
   
   VectorXd scale_cumulative(model.size());
@@ -103,33 +97,34 @@ void remove_children(RowVectorXb& genotype, const Node v, const Model& model) {
 }
 
 RowVectorXb draw_sample(const RowVectorXb& genotype, const Model& model,
-                        const bool move, const VectorXd& q_prob,
-                        double& q_choice, Context::rng_type& rng) {
+                        const unsigned int move, const VectorXd& remove_weight,
+                        const VectorXd& add_weight, double& q_choice,
+                        const int idx_remove, const int idx_add,
+                        bool compatible) {
 
-  int idx;
-  VectorXd q_prob_inverse = q_prob.array().inverse();
-  bool compatible = is_compatible(genotype, model);
   RowVectorXb sample = genotype;
   switch (move) {
     case 0 :
       /* Pick an event to be added */
-      idx = rdiscrete(q_prob_inverse, rng);
-      q_choice = q_prob_inverse[idx] / q_prob_inverse.sum();
-      sample[idx] = true;
+      q_choice = add_weight[idx_add] / add_weight.sum();
+      sample[idx_add] = true;
       if (compatible)
-        add_parents(sample, idx, model);
+        add_parents(sample, idx_add, model);
       else
         add_all(sample, model);
       break;
     case 1 :
       /* Pick an event to be removed */
-      idx = rdiscrete(q_prob, rng);
-      q_choice = q_prob[idx] / q_prob.sum();
-      sample[idx] = false;
+      q_choice = remove_weight[idx_remove] / remove_weight.sum();
+      sample[idx_remove] = false;
       if (compatible)
-        remove_children(sample, idx, model);
+        remove_children(sample, idx_remove, model);
       else
         remove_all(sample, model);
+      break;
+    case 2 :
+      /* Stand-still */
+      q_choice = 1;
       break;
   }
   return sample;
@@ -240,7 +235,7 @@ RcppExport SEXP _draw_sample(
     SEXP genotypeSEXP, SEXP posetSEXP, SEXP moveSEXP, SEXP q_probSEXP,
     SEXP seedSEXP) {
   try {
-    // Convert input to C++ types
+    /* Convert input to C++ types */
     const RowVectorXb& genotype = Rcpp::as<RowVectorXb>(genotypeSEXP);
     const MapMati poset(Rcpp::as<MapMati>(posetSEXP));
     const bool move = Rcpp::as<bool>(moveSEXP);
@@ -254,14 +249,22 @@ RcppExport SEXP _draw_sample(
     if (M.cycle)
       throw not_acyclic_exception();
     M.topological_sort();
-    
-    Context ctx(seed);
-    // Call the underlying C++ function
-    double q_choice;
-    RowVectorXb sample = draw_sample(genotype, M, move, q_prob, q_choice,
-                                     ctx.rng);
+    bool compatible = is_compatible(genotype, M);
+    VectorXd remove_weight = genotype.select(q_prob.transpose(), 0);
+    VectorXd add_weight = q_prob.array().inverse();
+    add_weight = genotype.select(0, add_weight.transpose());
 
-    // Return the result as a SEXP
+    Context ctx(seed);
+    int idx_remove = rdiscrete_std(1, remove_weight, ctx.rng)[0];
+    int idx_add = rdiscrete_std(1, add_weight, ctx.rng)[0];
+
+    /* Call the underlying C++ function */
+    double q_choice;
+    RowVectorXb sample = draw_sample(genotype, M, move, remove_weight,
+                                     add_weight, q_choice, idx_remove, idx_add,
+                                     compatible);
+
+    /* Return the result as a SEXP */
     return Rcpp::List::create(Rcpp::Named("sample")=sample,
                               Rcpp::Named("q_choice")=q_choice);
   } catch  (...) {
