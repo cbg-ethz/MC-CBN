@@ -242,7 +242,8 @@ int num_compatible_observations(const MatrixXb& obs, const Model& poset,
 
 int num_incompatible_events(const MatrixXb& genotype, const Model& poset);
 
-int rdiscrete(const VectorXd& weights, Context::rng_type& rng);
+std::vector<int> rdiscrete_std(const unsigned int N, const VectorXd& weights,
+                               Context::rng_type& rng);
 
 void handle_exceptions();
 

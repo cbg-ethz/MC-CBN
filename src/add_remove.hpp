@@ -18,8 +18,10 @@
 VectorXd scale_path_to_mutation(const Model& model);
 
 RowVectorXb draw_sample(const RowVectorXb& genotype, const Model& model,
-                        const bool move, const VectorXd& q_prob,
-                        double& q_choice, Context::rng_type& rng);
+                        const unsigned int move, const VectorXd& remove_weight,
+                        const VectorXd& add_weight, double& q_choice,
+                        const int idx_remove, const int idx_add,
+                        bool compatible);
 
 MatrixXd generate_mutation_times(const MatrixXb& obs, const Model& model,
                                  VectorXd& dens, VectorXd& sampling_time,

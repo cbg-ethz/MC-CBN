@@ -55,7 +55,7 @@ void handle_exceptions() {
 
 //' @noRd
 //' @param N number of samples to be drawn
-std::vector<int> rdiscrete_std(const unsigned int N, const VectorXd weights,
+std::vector<int> rdiscrete_std(const unsigned int N, const VectorXd& weights,
                                Context::rng_type& rng) {
   std::discrete_distribution<int> distribution(weights.data(),
                                                weights.data() + weights.size());
@@ -382,16 +382,50 @@ DataImportanceSampling importance_weight(
 
     /* Pick a move: add or remove with equal probability
      * Remove: choose event x with prob. ~ sum_{j \in max_path to x}(1/lambda_j)
-     * Add: choose event x with an inverse probability
-     * TODO: add 'stand-still' move (applicable if the observation is
-     * compatible with the poset).
+     * (not applicable if genotype corresponds to the wild type)
+     * Add: choose event x with an inverse probability (not applicable if the
+     * genotype corresponds to the resistant genotype)
+     * 'Stand-still': remain unperturbed (applicable if genotype is compatible
+     * with the poset)
      */
-    std::vector<int> move = runif_int_std(L, 1, rng);
-    log_proposal.setConstant(std::log(0.5) + std::log(p));
+    bool compatible = is_compatible(genotype, model);
+    unsigned int mutations = genotype.count();
+    bool wild_type = (mutations == 0);
+    bool resistant_type = (mutations == p);
+    std::vector<int> move(L);
+    if (compatible) {
+      if (wild_type) {
+        /* possible moves: add (move 0) or stand-still (move 2) */
+        Eigen::Vector3d weights(0.5, 0.0, 0.5);
+        move = rdiscrete_std(L, weights, rng);
+        log_proposal.setConstant(std::log(0.5));
+      } else if (resistant_type) {
+        /* possible moves: remove (move 1) or stand-still (move 2) */
+        Eigen::Vector3d weights(0.0, 0.5, 0.5);
+        move = rdiscrete_std(L, weights, rng);
+        log_proposal.setConstant(std::log(0.5));
+      } else {
+        Eigen::Vector3d weights = Eigen::Vector3d::Ones();
+        move = rdiscrete_std(L, weights, rng);
+        log_proposal.setConstant(-std::log(3));
+      }
+    } else {
+      /* possible moves: add (move 0) or remove (move 1) */
+      Eigen::Vector2d weights = Eigen::Vector2d::Constant(0.5);
+      move = rdiscrete_std(L, weights, rng);
+      log_proposal.setConstant(std::log(0.5));
+    }
     double q_choice;
+    VectorXd remove_weight = genotype.select(scale_cumulative.transpose(), 0);
+    VectorXd add_weight = scale_cumulative.array().inverse();
+    add_weight = genotype.select(0, add_weight.transpose());
+    std::vector<int> idx_remove = rdiscrete_std(L, remove_weight, rng);
+    std::vector<int> idx_add = rdiscrete_std(L, add_weight, rng);
+
     for (unsigned int l = 0; l < L; ++l) {
-      samples.row(l) = draw_sample(genotype, model, move[l], scale_cumulative,
-                                   q_choice, rng);
+      samples.row(l) = draw_sample(genotype, model, move[l], remove_weight,
+                                   add_weight, q_choice, idx_remove[l],
+                                   idx_add[l], compatible);
       log_proposal[l] += std::log(q_choice);
     }
     importance_sampling.dist = hamming_dist_mat(samples, genotype);
