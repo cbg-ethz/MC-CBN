@@ -41,37 +41,10 @@ void handle_exceptions() {
 
 //' @noRd
 //' @param N number of samples to be drawn
-//' @param lambda rate
-// VectorXd rexp_std(const unsigned int N, const double lambda,
-//                   Context::rng_type& rng) {
-//   std::exponential_distribution<double> distribution(lambda);
-//   VectorXd T(N);
-//
-//   for (unsigned int i = 0; i < N; ++i)
-//     T[i] = distribution(rng);
-//
-//   return T;
-// }
-
-//' @noRd
-//' @param N number of samples to be drawn
 std::vector<int> rdiscrete_std(const unsigned int N, const VectorXd& weights,
                                Context::rng_type& rng) {
   std::discrete_distribution<int> distribution(weights.data(),
                                                weights.data() + weights.size());
-  std::vector<int> ret(N);
-
-  for (unsigned int i = 0; i < N; ++i)
-    ret[i] = distribution(rng);
-
-  return ret;
-}
-
-//' @noRd
-std::vector<int> runif_int_std(const unsigned int N, const int upper_limit,
-                               Context::rng_type& rng) {
-
-  std::uniform_int_distribution<int> distribution(0, upper_limit);
   std::vector<int> ret(N);
 
   for (unsigned int i = 0; i < N; ++i)
@@ -93,14 +66,35 @@ VectorXd log_bernoulli_process(const VectorXd& dist, const double eps,
      */
     for (unsigned int i = 0; i < L; ++i) {
       if (dist[i] != 0) {
-        log_prob[i] = log(eps + DBL_EPSILON) * dist[i] +
-          log(1 - eps - DBL_EPSILON) * (p - dist[i]);
+        double log_eps = std::log(eps + DBL_EPSILON);
+        double log1m_eps = std::log1p(- eps - DBL_EPSILON);
+        log_prob[i] = log_eps * dist[i] + log1m_eps * (p - dist[i]);
       } else {
         log_prob[i] = 0;
       }
     }
   } else {
-    log_prob = (log(eps) * dist).array() + log(1 - eps) * (p - dist.array());
+    double log_eps = std::log(eps);
+    double log1m_eps = std::log1p(-eps);
+    log_prob = (log_eps * dist).array() + log1m_eps * (p - dist.array());
+  }
+  return log_prob;
+}
+
+double log_bernoulli_process(const unsigned int dist, const double eps,
+                             const unsigned int p) {
+  double log_prob = 0.0;
+
+  if (eps == 0) {
+    /* NOTE: If all observations are compatible with poset (which can happen
+    * because noisy observations can be compatible), then eps can be 0, as
+    * well as dist.
+    */
+    if (dist != 0)
+      log_prob = std::log(eps + DBL_EPSILON) * dist +
+        std::log1p(- eps - DBL_EPSILON) * (p - dist);
+  } else {
+    log_prob = std::log(eps) * dist + std::log1p(-eps) * (p - dist);
   }
   return log_prob;
 }
@@ -125,11 +119,11 @@ double complete_log_likelihood(const VectorXd& lambda, const double eps,
   if (eps == 0) {
     for (unsigned int i = 0; i < N; ++i) {
       if (dist(i) != 0)
-        llhood += log(eps + DBL_EPSILON) * dist(i) +
-          log(1 - eps - DBL_EPSILON) * (p - dist(i));
+        llhood += std::log(eps + DBL_EPSILON) * dist(i) +
+          std::log(1 - eps - DBL_EPSILON) * (p - dist(i));
     }
   } else {
-    llhood += log(eps) * dist.sum() + log(1 - eps) * (p - dist.array()).sum();
+    llhood += std::log(eps) * dist.sum() + std::log1p(- eps) * (p - dist.array()).sum();
   }
   return llhood;
 }
@@ -462,7 +456,7 @@ DataImportanceSampling importance_weight(
     double q_prob_sum = q_prob.sum();
     q_prob /= q_prob_sum;
 
-    // Draw L samples with replacement and with weights q_prob
+    /* Draw L samples with replacement and with weights q_prob */
     std::vector<int> idxs_sample = rdiscrete_std(L, q_prob, rng);
     int idx;
     for (unsigned int l = 0; l < L; ++l) {
@@ -483,15 +477,22 @@ DataImportanceSampling importance_weight(
     VectorXd log_proposal = VectorXd::Zero(L);
 
     MatrixXb samples = genotype.replicate(nrows_sum, 1);
+    VectorXi dist = VectorXi::Zero(nrows_sum);
+    VectorXd log_prob_Y_X_aux = VectorXd::Zero(nrows_sum);
+    log_prob_Y_X_aux[0] =
+      log_bernoulli_process(0.0, model.get_epsilon(), p);
     nrows_sum = 1;
     for (unsigned int i = 1; i <= neighborhood_dist; ++i) {
       choices(p, i, samples.block(nrows_sum, 0, nrows[i], p));
+      dist.segment(nrows_sum, nrows[i]).setConstant(i);
+      log_prob_Y_X_aux.segment(nrows_sum, nrows[i]).setConstant(
+          log_bernoulli_process(i, model.get_epsilon(), p));
       nrows_sum += nrows[i];
     }
 
-    VectorXi dist = hamming_dist_mat(samples, genotype);
     MatrixXb samples_rep = samples.replicate(reps, 1);
     importance_sampling.dist = dist.replicate(reps, 1);
+    log_prob_Y_X = log_prob_Y_X_aux.replicate(reps, 1);
 
     VectorXd T_sampling(L);
     if (sampling_times_available)
@@ -505,9 +506,6 @@ DataImportanceSampling importance_weight(
     Eigen::Matrix<bool, Eigen::Dynamic, 1> incompatible_samples = (importance_sampling.Tdiff.array() < 0.0).rowwise().any();
     log_proposal = log_proposal.array() - std::log(nrows_sum - incompatible_samples.count() / reps);
 
-    log_prob_Y_X =
-      log_bernoulli_process(importance_sampling.dist.cast<double>(),
-                            model.get_epsilon(), p);
     log_prob_X = cbn_density_log(importance_sampling.Tdiff, model.get_lambda());
 
     importance_sampling.w =
