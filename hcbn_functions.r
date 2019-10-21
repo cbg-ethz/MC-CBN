@@ -1160,6 +1160,7 @@ initialize.lambda <- function(obs.events, poset, lambda.s, verbose=FALSE) {
       }
     }
   }
+  lambda[is.infinite(lambda)] <- 5 * max(lambda[!is.infinite(lambda)])
   return(lambda)
 }
 
