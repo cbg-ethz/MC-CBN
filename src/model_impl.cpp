@@ -12,6 +12,7 @@
 #include <boost/graph/topological_sort.hpp>
 #include <boost/graph/transitive_closure.hpp>
 #include <vector>
+#include <cmath>
 
 void Model::set_lambda(const Eigen::Ref<const VectorXd>& lambda) {
   _lambda = lambda;
@@ -20,7 +21,7 @@ void Model::set_lambda(const Eigen::Ref<const VectorXd>& lambda) {
 void Model::set_lambda(const Eigen::Ref<const VectorXd>& lambda, const float max_lambda) {
   _lambda = lambda;
   for (unsigned int j = 0; j < lambda.size(); ++j)
-    if (lambda[j] > max_lambda)
+    if (lambda[j] > max_lambda || !std::isfinite(lambda[j]))
       _lambda[j] = max_lambda;
 }
 

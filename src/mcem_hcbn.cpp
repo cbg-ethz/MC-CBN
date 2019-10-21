@@ -773,7 +773,7 @@ RcppExport SEXP _MCEM_hcbn(
     const auto p = poset.rows(); // Number of mutations / events
     edge_container edge_list = adjacency_mat2list(poset);
     Model M(edge_list, p, lambda_s);
-    M.set_lambda(ilambda);
+    M.set_lambda(ilambda, max_lambda);
     M.set_epsilon(eps);
     M.has_cycles();
     if (M.cycle)
