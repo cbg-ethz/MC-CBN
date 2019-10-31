@@ -98,7 +98,7 @@ complete.loglikelihood_ <- function(lambdas, eps, Tdiff, dist) {
 #' Defaults to \code{1}
 obs.loglikelihood_ <- function(
   obs.events, poset, lambdas, lambda.s, eps, sampling.times=NULL, L=1000,
-  sampling=c('forward', 'add-remove', 'pool', 'backward'),
+  sampling=c('forward', 'add-remove', 'backward', 'bernoulli', 'pool'),
   perturb.prob=0.8, version="3", neighborhood.dist=1L, exact=FALSE,
   seed=NULL) {
 
@@ -562,7 +562,7 @@ log.cbn.density <- function(Tdiff, rate) {
 #' @param eps error rate
 #' @param sampling.time an optional argument specifying the sampling time
 #' @param sampling type of sampling scheme. OPTIONS: \code{"forward"},
-#' \code{"add-remove"} or \code{"pool"}
+#' \code{"add-remove"}, \code{"backward"}, \code{"bernoulli"}, or \code{"pool"}
 #' @param perturb.prob probability of perturbing a genotype. Genotypes are
 #' perturbed in order to learn the error rate, \eqn{\epsilon}. Defaults to
 #' \code{0.8}
@@ -743,7 +743,7 @@ importance.weight_ <- function(
 #' Defaults to \code{1}
 prob.importance.sampling <- function(
   genotype, L, poset, lambdas, lambda.s, eps, sampling.time=NULL,
-  sampling=c('forward', 'add-remove', 'pool', 'backward'),
+  sampling=c('forward', 'add-remove', 'backward', 'bernoulli', 'pool'),
   perturb.prob=0.8, version="3", weight.remove=numeric(0), sampling.pool=200,
   neighborhood.dist=1L, seed=NULL) {
 
@@ -850,7 +850,7 @@ dist.importance.sampling <- function(
 #' is provided
 #' @param sampling.times an optional vector of sampling times per observation
 #' @param sampling type of sampling scheme. OPTIONS: \code{"forward"},
-#' \code{"add-remove"}, \code{"pool"} or \code{"backward"}
+#' \code{"add-remove"}, \code{"backward"}, \code{"bernoulli"}, or \code{"pool"}
 #' @param perturb.prob probability of perturbing a genotype. This option is
 #' used if \code{sampling} is set to \code{"add-remove"}. Defaults to
 #' \code{0.8}
@@ -868,7 +868,8 @@ dist.importance.sampling <- function(
 #' @param seed seed for reproducibility
 prob.empirical_vs_sampling <- function(
   events, L, poset, lambdas, lambda.s, eps, rep=NULL, one.genotype=FALSE,
-  sampling.times=NULL, sampling=c('forward', 'add-remove', 'pool', 'backward'),
+  sampling.times=NULL,
+  sampling=c('forward', 'add-remove', 'backward', 'bernoulli', 'pool'),
   perturb.prob=0.8, version="3", sampling.pool=200, neighborhood.dist=1L,
   outdir=NULL, outname="", binwidth=0.01, seed=NULL) {
 

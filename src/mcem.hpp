@@ -229,7 +229,11 @@ double MCEM_hcbn(
 
 unsigned int n_choose_k(unsigned int n, unsigned int k);
 
-void choices(const unsigned int p, unsigned int k, Eigen::Ref<MatrixXb> output_mat);
+void neighbors(const unsigned int p, unsigned int k,
+               Eigen::Ref<MatrixXb> output_mat);
+
+void coin_tossing(MatrixXb& output_mat, const double eps,
+                  Context::rng_type& rng);
 
 edge_container adjacency_mat2list(const MatrixXi& poset);
 
