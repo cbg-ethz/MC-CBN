@@ -5,7 +5,7 @@
 \title{Importance sampling}
 \usage{
 importance.weight(genotype, L, poset, lambda, eps, time = NULL,
-  sampling = c("forward", "add-remove", "pool", "backward"),
+  sampling = c("forward", "add-remove", "backward", "bernoulli", "pool"),
   weight.remove = numeric(0), dist.pool = integer(0),
   Tdiff.pool = matrix(0), neighborhood.dist = 1L, lambda.s = 1,
   thrds = 1L, seed = NULL)
@@ -26,16 +26,20 @@ entries indicate whether an event has been observed (\code{1}) or not
 
 \item{time}{optional argument specifying the sampling time}
 
-\item{sampling}{sampling scheme. OPTIONS: \code{"forward"} - generate
-occurrence times according to current rate parameters, and, from them,
-generate the genotypes; \code{"add-remove"} - generate genotypes from
-observed genotypes using a two-steps proposal. First, make genotypes
-compatible with the poset by either adding or removing mutations. Second,
-perturb this version by adding or removing a mutation while yielding a
-compatible observation; \code{"pool"} - generate a pool of compatible
-genotypes according to current rate parameters and sample \code{K}
-observations proportional to the Hamming distance; \code{"backward"} -
-generate genotypes with Hamming distance \code{k}}
+\item{sampling}{sampling scheme to generate hidden genotypes, \code{X}.
+OPTIONS: \code{"forward"} - generate occurrence times according to current
+rate parameters, and, from them, generate the hidden genotypes, \code{X};
+\code{"add-remove"} - generate genotypes, \code{X}, from observed genotypes,
+\code{Y} using a two-steps proposal. First, pick a move uniformly at random:
+either to add or to remove an event. Events are chosen to be removed with
+probability proportional to their rates, and to be added with an inverse
+probability. Second, make genotypes compatible with the poset by either
+adding or removing all events incompatible with the poset; \code{"backward"}
+- enumerate all genotypes with Hamming distance \code{k}; \code{"bernoulli"}
+- generate genotypes from a Bernoulli distribution with success probability
+\eqn{p = \epsilon}; \code{"pool"} - generate a pool of compatible genotypes
+according to current rate parameters and sample \code{K} observations
+proportional to their Hamming distance;}
 
 \item{weight.remove}{a numeric vector of length \code{p} containing the
 weights for choosing events to be removed. This option is used if

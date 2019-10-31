@@ -337,6 +337,7 @@ DataImportanceSampling importance_weight(
   /* Initialization and instantiation of variables */
   const vertices_size_type p = model.size(); // Number of mutations / events
   unsigned int reps = 0;
+  unsigned int L_aux = 1;
   std::vector<int> nrows(neighborhood_dist);
   unsigned int nrows_sum = 0;
   if (sampling == "backward") {
@@ -345,8 +346,12 @@ DataImportanceSampling importance_weight(
       nrows[i] = n_choose_k(p, i);
       nrows_sum += nrows[i];
     }
-    reps = L / (nrows_sum);
-    L = reps * (nrows_sum);
+    reps = L / nrows_sum;
+    L = reps * nrows_sum;
+  } else if (sampling == "bernoulli") {
+    reps = 1;
+    L_aux = std::max(L / reps, L_aux);
+    L = reps * L_aux;
   }
   DataImportanceSampling importance_sampling(L, p);
 
@@ -483,7 +488,7 @@ DataImportanceSampling importance_weight(
       log_bernoulli_process(0.0, model.get_epsilon(), p);
     nrows_sum = 1;
     for (unsigned int i = 1; i <= neighborhood_dist; ++i) {
-      choices(p, i, samples.block(nrows_sum, 0, nrows[i], p));
+      neighbors(p, i, samples.block(nrows_sum, 0, nrows[i], p));
       dist.segment(nrows_sum, nrows[i]).setConstant(i);
       log_prob_Y_X_aux.segment(nrows_sum, nrows[i]).setConstant(
           log_bernoulli_process(i, model.get_epsilon(), p));
@@ -511,6 +516,36 @@ DataImportanceSampling importance_weight(
     importance_sampling.w =
       (log_prob_Y_X + log_prob_X - log_proposal).array().exp();
     /* Downweight samples that are not feasible / incompatible with current poset */
+    importance_sampling.w = incompatible_samples.select(0, importance_sampling.w);
+  } else if (sampling == "bernoulli") {
+    VectorXd log_prob_Y_X(L);
+    VectorXd log_prob_X(L);
+    VectorXd log_proposal = VectorXd::Zero(L);
+
+    MatrixXb samples = genotype.replicate(L_aux, 1);
+    coin_tossing(samples, model.get_epsilon(), rng);
+
+    VectorXi dist = VectorXi::Zero(L_aux);
+    VectorXd log_prob_Y_X_aux = VectorXd::Zero(L_aux);
+    dist = hamming_dist_mat(samples, genotype);
+
+    MatrixXb samples_rep = samples.replicate(reps, 1);
+    importance_sampling.dist = dist.replicate(reps, 1);
+
+    VectorXd T_sampling(L);
+    if (sampling_times_available)
+      T_sampling.setConstant(time);
+
+    /* Generate mutation times based on samples */
+    importance_sampling.Tdiff =
+      generate_mutation_times(samples_rep, model, log_proposal, T_sampling, rng,
+                              sampling_times_available);
+
+    log_prob_X = cbn_density_log(importance_sampling.Tdiff, model.get_lambda());
+
+    importance_sampling.w = (log_prob_X - log_proposal).array().exp();
+    /* Account for incompatible samples and downweight them */
+    Eigen::Matrix<bool, Eigen::Dynamic, 1> incompatible_samples = (importance_sampling.Tdiff.array() < 0.0).rowwise().any();
     importance_sampling.w = incompatible_samples.select(0, importance_sampling.w);
   }
 
@@ -923,7 +958,7 @@ RcppExport SEXP _importance_weight(
         Tdiff_pool, neighborhood_dist, (*rngs)[omp_get_thread_num()],
         sampling_times_available);
 
-      if (sampling == "backward")
+      if (sampling == "backward" || sampling == "bernoulli")
         L_eff[i] = (w.w.array() > 0).count();
       w_sum[i] = w.w.sum();
       w_sum_sqrt[i] = w.w.dot(w.w);
@@ -932,7 +967,7 @@ RcppExport SEXP _importance_weight(
     }
 
     /* Return the result as a SEXP */
-    if (sampling == "backward")
+    if (sampling == "backward" || sampling == "bernoulli")
       return List::create(_["w"]=w_sum, _["w_sqrt"]=w_sum_sqrt, _["L_eff"]=L_eff,
                           _["dist"]=expected_dist, _["Tdiff"]=expected_Tdiff);
     else

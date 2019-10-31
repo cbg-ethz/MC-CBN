@@ -12,16 +12,20 @@
 #' @param lambda.s rate of the sampling process. Defaults to \code{1.0}
 #' @param weights a vector containing observation weights
 #' @param L number of samples to be drawn from the proposal in the E-step
-#' @param sampling sampling scheme. OPTIONS: \code{"forward"} - generate
-#' occurrence times according to current rate parameters, and, from them,
-#' generate the genotypes; \code{"add-remove"} - generate genotypes from
-#' observed genotypes using a two-steps proposal. First, make genotypes
-#' compatible with the poset by either adding or removing mutations. Second,
-#' perturb this version by adding or removing a mutation while yielding a
-#' compatible observation; \code{"pool"} - generate a pool of compatible
-#' genotypes according to current rate parameters and sample \code{K}
-#' observations proportional to the Hamming distance; \code{"backward"} -
-#' generate genotypes with Hamming distance \code{k}
+#' @param sampling sampling scheme to generate hidden genotypes, \code{X}.
+#' OPTIONS: \code{"forward"} - generate occurrence times according to current
+#' rate parameters, and, from them, generate the hidden genotypes, \code{X};
+#' \code{"add-remove"} - generate genotypes, \code{X}, from observed genotypes,
+#' \code{Y} using a two-steps proposal. First, pick a move uniformly at random:
+#' either to add or to remove an event. Events are chosen to be removed with
+#' probability proportional to their rates, and to be added with an inverse
+#' probability. Second, make genotypes compatible with the poset by either
+#' adding or removing all events incompatible with the poset; \code{"backward"}
+#' - enumerate all genotypes with Hamming distance \code{k}; \code{"bernoulli"}
+#' - generate genotypes from a Bernoulli distribution with success probability
+#' \eqn{p = \epsilon}; \code{"pool"} - generate a pool of compatible genotypes
+#' according to current rate parameters and sample \code{K} observations
+#' proportional to their Hamming distance;
 #' @param max.iter the maximum number of EM iterations. Defaults to \code{100}
 #' iterations
 #' @param update.step.size number of EM steps after which the number of
@@ -57,9 +61,9 @@
 #' @param seed seed for reproducibility
 adaptive.simulated.annealing <- function(
   poset, obs, times=NULL, lambda.s=1.0, weights=NULL, L,
-  sampling=c('forward', 'add-remove', 'pool', 'backward'), max.iter=100L,
-  update.step.size=20L, tol=0.001, max.lambda.val=1e6, T0=50, adap.rate=0.3,
-  acceptance.rate=NULL, step.size=NULL, max.iter.asa=10000L,
+  sampling=c('forward', 'add-remove', 'backward', 'bernoulli', 'pool'),
+  max.iter=100L, update.step.size=20L, tol=0.001, max.lambda.val=1e6, T0=50,
+  adap.rate=0.3, acceptance.rate=NULL, step.size=NULL, max.iter.asa=10000L,
   neighborhood.dist=1L, adaptive=TRUE, outdir=NULL, thrds=1L, verbose=FALSE,
   seed=NULL) {
   
