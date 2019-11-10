@@ -34,7 +34,7 @@ void Model::set_llhood(const double llhood) {
 }
 
 void Model::has_cycles() {
-  // Check for cycles using strongly connected components as proxy
+  /* Check for cycles using strongly connected components as proxy */
   std::vector<vertices_size_type> component(_size);
   vertices_size_type num_scc = boost::strong_components(
     poset,
@@ -107,21 +107,21 @@ void Model::set_children() {
       _children[u].insert(_children[v].begin(), _children[v].end());
     }
   }
+  _update_children = false;
 }
 
-//' @description Obtain successors of a given node.
-std::unordered_set<Node> Model::get_successors(Node u) {
-  std::unordered_set<Node> successors;
+//' @description Update successors of a given node.
+void Model::update_children(const Node& u) {
+  _children[u].clear();
 
   /* Loop through (direct) successor/children of node u */
   boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end;
   for (boost::tie(out_begin, out_end) = out_edges(u, poset);
        out_begin != out_end; ++out_begin) {
     Node v = target(*out_begin, poset);
-    successors.insert(v);
-    successors.insert(_children[v].begin(), _children[v].end());
+    _children[u].insert(v);
+    _children[u].insert(_children[v].begin(), _children[v].end());
   }
-  return successors;
 }
 
 //' @description Obtain direct successors per node. Successsors are sorted by
@@ -175,7 +175,7 @@ void Model::transitive_reduction_dag() {
       Node v = *adj;
       if (all_successors[u].find(v) != all_successors[u].end()) {
         /* remove edge (u, v) as v is already a children of u */
-        remove_edge(u, v, poset);
+        remove_edge(u, v);
         reduction_flag = false;
       } else {
         /* successors(u) = successors(u) U {v} */
@@ -183,6 +183,132 @@ void Model::transitive_reduction_dag() {
         /* successors(u) = successors(u) U successors(v) */
         all_successors[u].insert(all_successors[v].begin(), all_successors[v].end());
       }
+    }
+  }
+}
+
+// TODO: update children?
+bool Model::add_edge(const Node& u, const Node& v) {
+  std::pair<boost::graph_traits<Poset>::edge_descriptor, bool> add =
+    boost::add_edge(u, v, poset);
+
+  if (add.second) {
+    /* Add edge - Check that the resulting graph doesn't contain cycles
+    * and it is transitively reduced
+    * NOTE: possible improvement - remove the edges that render the
+    * resulting graph not transitively reduced
+    */
+    has_cycles();
+    if (!cycle) {
+      topological_sort();
+      transitive_reduction_dag();
+      _update_children = true;
+    }
+  }
+  return add.second;
+}
+
+void Model::remove_edge(const Node& u, const Node& v) {
+  boost::remove_edge(u, v, poset);
+  _update_children = true;
+}
+
+void Model::remove_redundant_edges(const Node& u, const Node& v) {
+  boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end, next;
+  boost::tie(out_begin, out_end) = out_edges(u, poset);
+  for (next = out_begin; out_begin != out_end; out_begin = next) {
+    ++next;
+    Node w = target(*out_begin, poset);
+    if (w == v || _children[v].find(w) != _children[v].end())
+      boost::remove_edge(u, w, poset);
+  }
+  /* Update children of u */
+  _children[u].insert(v);
+  _children[u].insert(_children[v].begin(), _children[v].end());
+
+  /* Recursion */
+  boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end, in_next;
+  boost::tie(in_begin, in_end) = in_edges(u, poset);
+  for (in_next = in_begin; in_begin != in_end; in_begin = in_next) {
+    ++in_next;
+    remove_redundant_edges(source(*in_begin, poset), v);
+  }
+}
+
+bool Model::add_relation(const Node& u, const Node& v) {
+
+  std::pair<boost::graph_traits<Poset>::edge_descriptor, bool> add =
+    boost::add_edge(u, v, poset);
+  if (add.second) {
+    /* Add edge - Check that the resulting graph doesn't contain cycles
+     * and it is transitively reduced
+     */
+    if (_children[u].find(v) != _children[u].end()) {
+      /* Node v is already reachable from u, i.e., v \in ch(u) */
+      reduction_flag = false;
+      return add.second;
+    }
+    if (_children[v].find(u) != _children[v].end()) {
+      /* There is a cycle */
+      cycle = true;
+      return add.second;
+    }
+    if (!cycle) {
+      /* Check if cover relations before the edge addition are redundant. i.e,
+       * if there exists an edge u -> ch(v), and remove it
+       */
+      boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end, next;
+      boost::tie(out_begin, out_end) = out_edges(u, poset);
+      for (next = out_begin; out_begin != out_end; out_begin = next) {
+        ++next;
+        Node w = target(*out_begin, poset);
+        if (_children[v].find(w) != _children[v].end())
+          boost::remove_edge(u, w, poset);
+      }
+      /* Update children of u */
+      _children[u].insert(v);
+      _children[u].insert(_children[v].begin(), _children[v].end());
+      /* Check for redundant cover relations among pa(u) */
+      boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end, in_next;
+      boost::tie(in_begin, in_end) = in_edges(u, poset);
+      for (in_next = in_begin; in_begin != in_end; in_begin = in_next) {
+        ++in_next;
+        remove_redundant_edges(source(*in_begin, poset), v);
+      }
+      topological_sort();
+      transitive_reduction_dag();
+    }
+  }
+  return add.second;
+}
+
+void Model::remove_relation(const Node& u, const Node& v) {
+  /* Remove cover relation */
+  boost::remove_edge(u, v, poset);
+  /* Update children of u */
+  update_children(u);
+  /* Check if edges of type u -> direct_children(v) are required  */
+  boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end;
+  for (boost::tie(out_begin, out_end) = out_edges(v, poset);
+       out_begin != out_end; ++out_begin) {
+    Node w = target(*out_begin, poset);
+    if (_children[u].find(w) == _children[u].end()) {
+      boost::add_edge(u, w, poset);
+      _children[u].insert(w);
+      _children[u].insert(_children[w].begin(), _children[w].end());
+    }
+  }
+  /* Check if edges pa(u) -> v are required */
+  boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
+  for (boost::tie(in_begin, in_end) = in_edges(u, poset); in_begin != in_end;
+       ++in_begin) {
+    Node pa_u = source(*in_begin, poset);
+    /* Update children of pa(u) */
+    update_children(pa_u);
+    if (_children[pa_u].find(v) == _children[pa_u].end()) {
+      boost::add_edge(pa_u, v, poset);
+      _children[pa_u].insert(v);
+      _children[pa_u].insert(_children[v].begin(), _children[v].end());
     }
   }
 }

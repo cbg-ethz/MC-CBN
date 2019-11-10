@@ -289,10 +289,14 @@ double obs_log_likelihood(
         obs.row(i), L, model, times[i], sampling, scale_cumulative, d_pool,
         Tdiff_pool, neighborhood_dist, (*rngs)[omp_get_thread_num()],
         sampling_times_available);
-      int L_eff = L;
-      if (sampling == "backward")
-        L_eff = (importance_sampling.w.array() > 0).count();
-      llhood += std::log(importance_sampling.w.sum() / L_eff);
+
+      double aux = importance_sampling.w.sum();
+      if (aux > 0) {
+        int L_eff = L;
+        if (sampling == "backward")
+          L_eff = (importance_sampling.w.array() > 0).count();
+        llhood += std::log(aux / L_eff);
+      }
     }
   }
   return llhood;

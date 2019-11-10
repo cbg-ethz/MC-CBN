@@ -165,7 +165,8 @@ double propose_edge(
   Model M_new(M);
   double llhood_new = 0.0;
   double fraction_compatible_new = 0.0;
-  std::vector<int> idxs_pool(p);
+  unsigned int num_edges = boost::num_edges(M.poset);
+  std::vector<int> idxs_pool(num_edges);
   std::vector<int> cover_relations_pool(p * p);
 
   /* Shuffle pool of indices. Use to draw edges/cover relations */
@@ -197,40 +198,33 @@ double propose_edge(
       /* Draw one relation at random */
       unsigned int v1 = (int) cover_relations_pool[i] / p;
       unsigned int v2 = cover_relations_pool[i] % p;
-      if (ctx.get_verbose())
-        std::cout << "Testing edge: " << v1 << "->" << v2 << std::endl;
-
       if (v1 == v2)
         continue;
 
-      std::pair<boost::graph_traits<Poset>::edge_descriptor, bool> add =
-        boost::add_edge(v1, v2, M_new.poset);
-      if (add.second) {
-        /* Add edge - Check that the resulting graph doesn't contain cycles
-         * and it is transitively reduced
-         * NOTE: possible improvement - remove the edges that renders the
-         * resulting graph not transitively reduced
-         */
-        M_new.has_cycles();
+      if (ctx.get_verbose())
+        std::cout << "Testing edge: " << v1 << "->" << v2 << std::endl;
+
+      bool add = M_new.add_edge(v1, v2);
+      if (add) {
         if (M_new.cycle) {
           if (ctx.get_verbose())
             std::cout << "Cycle!" << std::endl;
           continue;
         } else {
-          M_new.topological_sort();
-          M_new.transitive_reduction_dag();
           if (M_new.reduction_flag) {
             if (ctx.get_verbose())
-              std::cout << "Adding new edge: " <<  add.first << std::endl;
+              std::cout << "Adding new edge: (" <<  v1 << "," << v2 << ")"
+                        << std::endl;
           } else {
             continue;
           }
         }
       } else {
         /* Remove edge*/
-        remove_edge(v1, v2, M_new.poset);
+        M_new.remove_edge(v1, v2);
         if (ctx.get_verbose())
-          std::cout << "Removing edge: " <<  add.first << std::endl;
+          std::cout << "Removing edge: (" <<  v1 << "," << v2 << ")"
+                    << std::endl;
       }
       if (heuristic_compatibility(M_new, obs, fraction_compatible,
                                   fraction_compatible_new,
@@ -238,139 +232,104 @@ double propose_edge(
         break;
     }
     if (i == p * p)
-      std::cout << "Warning: All posible moves yielded a poset with lower"
-                << " fraction of compatible observations" << std::endl;
+      std::cout << "Warning: All add/remove moves yielded a poset with lower "
+                << "fraction of compatible observations" << std::endl;
     break;
   case 1:
-    /* Swap node labels: remove and add edge.
-     * Pick random edge u -> v
+    /* Swap edge: remove and add edge.
+     * Pick random edge v1 -> v2
      */
-    for (i = 0; i <  boost::num_edges(M.poset) * 2; ++i) {
+    for (i = 0; i < num_edges; ++i) {
 
       /* Every time a new move is proposed, start with the initial poset */
       M_new = M;
 
-      boost::graph_traits<Poset>::edge_descriptor e =
-        boost::random_edge(M_new.poset, ctx.rng);
-      Node u = source(e, M_new.poset);
-      Node v = target(e, M_new.poset);
+      boost::graph_traits<Poset>::edge_iterator ei;
+      ei = boost::next(boost::edges(M_new.poset).first, idxs_pool[i]);
+      Node v1 = source(*ei, M_new.poset);
+      Node v2 = target(*ei, M_new.poset);
 
       if (ctx.get_verbose())
-        std::cout << "Testing the edge swap: " << u << "->" << v << std::endl;
-      /* Remove edge u -> v */
-      remove_edge(u, v, M_new.poset);
-      /* Add edge v -> u */
-      std::pair<boost::graph_traits<Poset>::edge_descriptor, bool> add =
-        boost::add_edge(v, u, M_new.poset);
-      /* Check that the resulting graph doesn't contain cycles and it is
-       * transitively reduced
-       */
-       M_new.has_cycles();
-       if (M_new.cycle) {
+        std::cout << "Testing the edge swap: " << v1 << "->" << v2 << std::endl;
+      /* Remove edge v1 -> v2 */
+      M_new.remove_edge(v1, v2);
+      /* Add edge v2 -> v1 */
+      M_new.add_edge(v2, v1);
+      if (M_new.cycle) {
+        if (ctx.get_verbose())
+          std::cout << "Cycle!" << std::endl;
+        continue;
+      } else {
          if (ctx.get_verbose())
-           std::cout << "Cycle!" << std::endl;
-         continue;
-       } else {
-         M_new.topological_sort();
-         M_new.transitive_reduction_dag();
-         if (ctx.get_verbose())
-           std::cout << "Swapping edge: " <<  add.first << std::endl;
-       }
-       if (heuristic_compatibility(M_new, obs, fraction_compatible,
-                                   fraction_compatible_new,
-                                   factor_fraction_compatible, ctx))
-         break;
+           std::cout << "Swapping edge: (" <<  v1 << "," << v2 << ")"
+                     << std::endl;
+      }
+      if (heuristic_compatibility(M_new, obs, fraction_compatible,
+                                 fraction_compatible_new,
+                                 factor_fraction_compatible, ctx))
+        break;
     }
-    if (i == boost::num_edges(M.poset) * 2)
-      std::cout << "Warning: All tested swap moves yielded a poset with "
-                << "lower fraction of compatible observations"
-                << std::endl;
+    if (i == num_edges)
+      std::cout << "Warning: All swap-edge moves yielded a poset with lower "
+                << "fraction of compatible observations" << std::endl;
     break;
   case 2:
     /* Add or remove a cover relation. Add or remove an edge, while preserving
      * cover relations
      */
     for (i = 0; i < p * p; ++i) {
-      M_new = M;
-
       /* Draw one relation at random */
       unsigned int v1 = (int) cover_relations_pool[i] / p;
       unsigned int v2 = cover_relations_pool[i] % p;
+      if (v1 == v2)
+        continue;
+
       if (ctx.get_verbose())
         std::cout << "Testing edge (preserving cover relations): " << v1 << "->"
                   << v2 << std::endl;
 
-      if (v1 == v2)
-        continue;
+      if (M.get_update_children()) {
+        M.set_children();
+      }
+      M_new = M;
 
-      M_new.set_children();
-      const std::vector< std::unordered_set<Node> >& children = M_new.get_children();
-      std::pair<boost::graph_traits<Poset>::edge_descriptor, bool> add =
-        boost::add_edge(v1, v2, M_new.poset);
-      if (add.second) {
-        /* Add cover relation - Check that the resulting graph doesn't contain
-        * cycles
-        */
-        M_new.has_cycles();
+      bool add = M_new.add_relation(v1, v2);
+      if (add) {
         if (M_new.cycle) {
           if (ctx.get_verbose())
             std::cout << "Cycle!" << std::endl;
           continue;
         } else {
-          /* Check if cover relations before the edge addition are redundant */
-          boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end, next;
-          boost::tie(out_begin, out_end) = out_edges(v1, M_new.poset);
-          for (next = out_begin; out_begin != out_end; out_begin = next) {
-            ++next;
-            Node u = target(*out_begin, M_new.poset);
-            if (children[v2].find(u) != children[v2].end()) {
-              remove_edge(v1, u, M_new.poset);
-              if (ctx.get_verbose())
-                std::cout << "Removing redundant edge: " << v1 << "->" << u
-                          << std::endl;
-            }
-          }
-          if (ctx.get_verbose())
-            M_new.print_cover_relations();
-
-          M_new.topological_sort();
-          M_new.transitive_reduction_dag();
           if (M_new.reduction_flag) {
+            /* NOTE: The resulting poset can be non transitively reduced, e.g.,
+             * if the new edge doesn't correspond to a new cover relation (v2
+             * was already reachable from v1)
+             */
             if (ctx.get_verbose())
-              std::cout << "Adding new cover relation: " <<  add.first << std::endl;
+              std::cout << "Adding new cover relation: (" <<  v1 << "," << v2
+                        << ")" << std::endl;
           } else {
             continue;
           }
         }
       } else {
         /* Remove cover relation */
-        remove_edge(v1, v2, M_new.poset);
-        /* Update children of v1 */
-        std::unordered_set<Node> v1_children = M_new.get_successors(v1);
-        /* Check if edges of type v1 - > direct_children(v2) are required.
-         * Possible improvement: check for edges pa(v1) to v2
-         */
-        boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end;
-        for (boost::tie(out_begin, out_end) = out_edges(v2, M_new.poset);
-             out_begin != out_end; ++out_begin) {
-          Node u = target(*out_begin, M_new.poset);
-          if (v1_children.find(u) == v1_children.end()) {
-            boost::add_edge(v1, u, M_new.poset);
-            if (ctx.get_verbose())
-              std::cout << "Adding lost cover relation: " << v1 << "->" << u
-                        << std::endl;
-          }
-        }
+        M_new.remove_relation(v1, v2);
         if (ctx.get_verbose())
-          M_new.print_cover_relations();
-        if (ctx.get_verbose())
-          std::cout << "Removing cover relation: " <<  add.first << std::endl;
+          std::cout << "Removing cover relation: (" <<  v1 << "," << v2 << ")"
+                    << std::endl;
       }
+      if (ctx.get_verbose())
+        M_new.print_cover_relations();
+
       if (heuristic_compatibility(M_new, obs, fraction_compatible,
                                   fraction_compatible_new,
                                   factor_fraction_compatible, ctx))
         break;
     }
+    if (i == p * p)
+      std::cout << "Warning: All moves yielded a poset with lower fraction "
+                << "of compatible observations" << std::endl;
     break;
   }
 
@@ -433,6 +392,8 @@ double simulated_annealing(
   double llhood = MCEM_hcbn(
     poset, obs, times, weights, L, sampling, control_EM,
     sampling_times_available, thrds, ctx);
+  Model poset_ML(poset);
+  double llhood_ML = llhood;
 
   /* 2. Compute the fraction of compatible observations/genotypes with the
    *    initial poset
@@ -476,6 +437,10 @@ double simulated_annealing(
       poset, obs, llhood, fraction_compatible, times, weights, control_ASA.T,
       num_accept, control_ASA.get_compatible_fraction_factor(), L, sampling,
       control_EM, sampling_times_available, thrds, ctx);
+    if (llhood > llhood_ML) {
+      llhood_ML = llhood;
+      poset_ML = poset;
+    }
 
     if (ctx.get_verbose())
       poset.print_cover_relations();
@@ -516,6 +481,7 @@ double simulated_annealing(
   ControlEM control_last(control_EM.max_iter * 2,
                          control_EM.update_step_size * 2, control_EM.tol,
                          control_EM.max_lambda);
+  poset = poset_ML;
   llhood = MCEM_hcbn(
     poset, obs, times, weights, L, sampling, control_last,
     sampling_times_available, thrds, ctx);
@@ -618,7 +584,7 @@ RcppExport SEXP _remove_test(SEXP posetSEXP) {
       Node v1 = source(*ei, M.poset);
       Node v2 = target(*ei, M.poset);
       Model M_new(M);
-      remove_edge(v1, v2, M_new.poset);
+      boost::remove_edge(v1, v2, M_new.poset);
       M_new.has_cycles();
       if (M_new.cycle)
         throw not_acyclic_exception();
