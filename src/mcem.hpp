@@ -72,31 +72,34 @@ public:
   bool cycle;                 // Boolean variable indicating whether the poset contains cycles
   bool reduction_flag;        // Boolean variable indicating whether the poset is a transitively reduced graph
 
-  // Default constructor
-  Model(float lambda_s=1.0, bool cycle=false, bool reduction=false) :
-    cycle(cycle), reduction_flag(reduction), _lambda_s(lambda_s), _size(0) {}
+  /* Default constructor */
+  Model(float lambda_s=1.0, bool cycle=false, bool reduction=false,
+        bool update_children=true) : cycle(cycle), reduction_flag(reduction),
+        _lambda_s(lambda_s), _update_children(update_children), _size(0) {}
 
-  // Parametrized constructor
+  /* Parametrized constructor */
   Model(unsigned int p, float lambda_s=1.0, bool cycle=false,
-        bool reduction=false) : poset(p), cycle(cycle), reduction_flag(reduction),
-        _lambda(p), _lambda_s(lambda_s), _children(p), _size(p) {
+        bool reduction=false, bool update_children=true) : poset(p),
+        cycle(cycle), reduction_flag(reduction), _lambda(p), _lambda_s(lambda_s),
+        _children(p), _update_children(update_children), _size(p) {
     topo_path.reserve(p);
   }
 
-  // Constructor using the edge iterator constructor
+  /* Constructor using the edge iterator constructor */
   Model(const edge_container& edge_list, unsigned int p, float lambda_s=1.0,
-         bool cycle=false, bool reduction=false) :
+         bool cycle=false, bool reduction=false, bool update_children=true) :
     poset(edge_list.begin(), edge_list.end(), p), cycle(cycle),
-    reduction_flag(reduction), _lambda(p), _lambda_s(lambda_s), _children(p),
-    _size(p) {
+    reduction_flag(reduction), _lambda(p), _lambda_s(lambda_s),
+    _children(p), _update_children(update_children), _size(p) {
     topo_path.reserve(p);
   }
 
-  // Copy constructor
+  /* Copy constructor */
   Model(const Model& m) : poset(m.poset), topo_path(m.topo_path),
   cycle(m.cycle), reduction_flag(m.reduction_flag), _lambda(m.get_lambda()),
   _lambda_s(m.get_lambda_s()), _epsilon(m.get_epsilon()),
-  _llhood(m.get_llhood()), _children(m.get_children()), _size(m.size()) {}
+  _llhood(m.get_llhood()), _children(m.get_children()),
+  _update_children(m.get_update_children()), _size(m.size()) {}
 
   inline vertices_size_type size() const;
 
@@ -125,15 +128,27 @@ public:
 
   inline const std::vector< std::unordered_set<Node> >& get_children() const;
 
+  inline bool get_update_children() const;
+
   void has_cycles();
 
   void topological_sort();
 
-  std::unordered_set<Node> get_successors(Node u);
+  void update_children(const Node& u);
 
   std::vector<node_container> get_direct_successors(node_container& topo_order);
 
   void transitive_reduction_dag();
+
+  bool add_edge(const Node& u, const Node& v);
+
+  void remove_edge(const Node& u, const Node& v);
+
+  void remove_redundant_edges(const Node& u, const Node& v);
+
+  bool add_relation(const Node& u, const Node& v);
+
+  void remove_relation(const Node& u, const Node& v);
 
   template <typename PropertyMap>
   void print_cover_relations(PropertyMap name);
@@ -148,6 +163,7 @@ protected:
   double _epsilon;
   double _llhood;
   std::vector< std::unordered_set<Node> > _children;
+  bool _update_children;
   vertices_size_type _size;
 };
 
@@ -157,7 +173,7 @@ public:
   VectorXi dist;
   MatrixXd Tdiff;
 
-  //Parametrized Constructor
+  /*Parametrized Constructor */
   DataImportanceSampling(unsigned int L, unsigned int p) : w(L), dist(L),
     Tdiff(L, p) {}
 
@@ -205,6 +221,10 @@ double Model::get_llhood() const {
 
 const std::vector< std::unordered_set<Node> >& Model::get_children() const {
   return _children;
+}
+
+bool Model::get_update_children() const {
+  return _update_children;
 }
 
 DataImportanceSampling importance_weight(
