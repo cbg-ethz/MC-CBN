@@ -62,6 +62,7 @@ void initialize_lambda(Model& model, const MatrixXb& obs, const float max_lambda
   unsigned int N = obs.rows();
   unsigned int p = model.size();
   VectorXd lambda(p);
+  auto id = boost::get(&Event::event_id, model.poset);
   std::vector< std::unordered_set<Node> > all_predecessors(p);
   /* Loop through nodes in topological order */
   for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
@@ -70,46 +71,47 @@ void initialize_lambda(Model& model, const MatrixXb& obs, const float max_lambda
     boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
     for (boost::tie(in_begin, in_end) = boost::in_edges(*v, model.poset);
          in_begin != in_end; ++in_begin) {
-      Node u = source(*in_begin, model.poset);
-      all_predecessors[*v].insert(u);
-      all_predecessors[*v].insert(all_predecessors[u].begin(),
-                                  all_predecessors[u].end());
+      Node u = boost::get(id, source(*in_begin, model.poset));
+      all_predecessors[model.poset[*v].event_id].insert(u);
+      all_predecessors[model.poset[*v].event_id].insert(all_predecessors[u].begin(),
+                                                        all_predecessors[u].end());
     }
 
-    /*float aux;
-    int num_predecessors = all_predecessors[*v].size();
+    unsigned int count = 1;
+    float mutated = 1e-7;
+    int num_predecessors = all_predecessors[model.poset[*v].event_id].size();
     if (num_predecessors > 0) {
       VectorXi partial_sums(N);
       partial_sums.setConstant(0);
-      for (const auto& j: all_predecessors[*v])
+      for (const auto& j: all_predecessors[model.poset[*v].event_id])
         partial_sums = partial_sums + obs.col(j).cast<int>();
-      aux = (partial_sums.array() == num_predecessors).count();
-      partial_sums = partial_sums + obs.col(*v).cast<int>();
-      aux = ((float) (partial_sums.array() == num_predecessors + 1).count()) / aux;
-    } else { */
+      count += (partial_sums.array() == num_predecessors).count();
+      partial_sums = partial_sums + obs.col(model.poset[*v].event_id).cast<int>();
+      mutated += (partial_sums.array() == num_predecessors + 1).count();
+    } else {
       /* Source node (i.e. without predecessors) */
-      // TODO: Debug and benchmark
-      /*aux = (float) obs.col(*v).sum() / N;
-    } */
-    /* Pseudocounts */
-    unsigned int count = 1;
-    float mutated = 1e-7;
-    for (unsigned int i = 0; i < N; ++i) {
-      bool parents_flag = true;
-      for (const auto& j: all_predecessors[*v]) {
-        if (!obs(i, j)) {
-          parents_flag = false;
-          break;
-        }
-      }
-      if (parents_flag) {
-        count += 1;
-        if (obs(i, *v))
-          mutated += 1.0;
-      }
+      count += N;
+      mutated += obs.col(model.poset[*v].event_id).cast<int>().sum();
     }
+    /* Pseudocounts */
+    // unsigned int count = 1;
+    // float mutated = 1e-7;
+    // for (unsigned int i = 0; i < N; ++i) {
+    //   bool parents_flag = true;
+    //   for (const auto& j: all_predecessors[model.poset[*v].event_id]) {
+    //     if (!obs(i, j)) {
+    //       parents_flag = false;
+    //       break;
+    //     }
+    //   }
+    //   if (parents_flag) {
+    //     count += 1;
+    //     if (obs(i, model.poset[*v].event_id))
+    //       mutated += 1.0;
+    //   }
+    // }
     float aux = mutated / count;
-    lambda[*v] = aux * model.get_lambda_s() / (1.0 - aux);
+    lambda[model.poset[*v].event_id] = aux * model.get_lambda_s() / (1.0 - aux);
   }
   model.set_lambda(lambda, max_lambda);
 }
@@ -181,7 +183,7 @@ double propose_edge(
    * Pick move: modify - add/delete - edge, swap edge or add/delete edge while
    * preserving cover relations
    */
-  std::discrete_distribution<int> distribution({0.5, 0.1, 0.4});
+  std::discrete_distribution<int> distribution({0.5, 0.0, 0.4, 0.1});
   int move = distribution(ctx.rng);
   unsigned int i;
 
@@ -202,7 +204,8 @@ double propose_edge(
         continue;
 
       if (ctx.get_verbose())
-        std::cout << "Testing edge: " << v1 << "->" << v2 << std::endl;
+        std::cout << "Testing edge: " <<  M_new.poset[v1].event_id << "->"
+                  << M_new.poset[v2].event_id << std::endl;
 
       bool add = M_new.add_edge(v1, v2);
       if (add) {
@@ -213,8 +216,8 @@ double propose_edge(
         } else {
           if (M_new.reduction_flag) {
             if (ctx.get_verbose())
-              std::cout << "Adding new edge: (" <<  v1 << "," << v2 << ")"
-                        << std::endl;
+              std::cout << "Adding new edge: (" <<  M_new.poset[v1].event_id
+                        << "," << M_new.poset[v2].event_id << ")" << std::endl;
           } else {
             continue;
           }
@@ -223,8 +226,8 @@ double propose_edge(
         /* Remove edge*/
         M_new.remove_edge(v1, v2);
         if (ctx.get_verbose())
-          std::cout << "Removing edge: (" <<  v1 << "," << v2 << ")"
-                    << std::endl;
+          std::cout << "Removing edge: (" <<  M_new.poset[v1].event_id << ","
+                    << M_new.poset[v2].event_id << ")" << std::endl;
       }
       if (heuristic_compatibility(M_new, obs, fraction_compatible,
                                   fraction_compatible_new,
@@ -250,7 +253,8 @@ double propose_edge(
       Node v2 = target(*ei, M_new.poset);
 
       if (ctx.get_verbose())
-        std::cout << "Testing the edge swap: " << v1 << "->" << v2 << std::endl;
+        std::cout << "Testing the edge swap: " << M_new.poset[v1].event_id
+                  << "->" << M_new.poset[v2].event_id << std::endl;
       /* Remove edge v1 -> v2 */
       M_new.remove_edge(v1, v2);
       /* Add edge v2 -> v1 */
@@ -261,8 +265,8 @@ double propose_edge(
         continue;
       } else {
          if (ctx.get_verbose())
-           std::cout << "Swapping edge: (" <<  v1 << "," << v2 << ")"
-                     << std::endl;
+           std::cout << "Swapping edge: (" <<  M_new.poset[v1].event_id << ","
+                     << M_new.poset[v2].event_id << ")" << std::endl;
       }
       if (heuristic_compatibility(M_new, obs, fraction_compatible,
                                  fraction_compatible_new,
@@ -285,12 +289,12 @@ double propose_edge(
         continue;
 
       if (ctx.get_verbose())
-        std::cout << "Testing edge (preserving cover relations): " << v1 << "->"
-                  << v2 << std::endl;
+        std::cout << "Testing edge (preserving cover relations): "
+                  << M.poset[v1].event_id << "->" << M.poset[v2].event_id
+                  << std::endl;
 
-      if (M.get_update_children()) {
+      if (M.get_update_children())
         M.set_children();
-      }
       M_new = M;
 
       bool add = M_new.add_relation(v1, v2);
@@ -306,8 +310,9 @@ double propose_edge(
              * was already reachable from v1)
              */
             if (ctx.get_verbose())
-              std::cout << "Adding new cover relation: (" <<  v1 << "," << v2
-                        << ")" << std::endl;
+              std::cout << "Adding new cover relation: ("
+                        << M_new.poset[v1].event_id << ","
+                        << M_new.poset[v2].event_id << ")" << std::endl;
           } else {
             continue;
           }
@@ -316,9 +321,35 @@ double propose_edge(
         /* Remove cover relation */
         M_new.remove_relation(v1, v2);
         if (ctx.get_verbose())
-          std::cout << "Removing cover relation: (" <<  v1 << "," << v2 << ")"
-                    << std::endl;
+          std::cout << "Removing cover relation: (" <<  M_new.poset[v1].event_id
+                    << "," << M_new.poset[v2].event_id << ")" << std::endl;
       }
+      if (heuristic_compatibility(M_new, obs, fraction_compatible,
+                                  fraction_compatible_new,
+                                  factor_fraction_compatible, ctx))
+        break;
+    }
+    if (i == p * p)
+      std::cout << "Warning: All moves yielded a poset with lower fraction "
+                << "of compatible observations" << std::endl;
+    break;
+  case 3:
+    /* Swap node labels */
+    for (i = 0; i < p * p; ++i) {
+
+      M_new = M;
+
+      /* Draw two nodes at random */
+      unsigned int v1 = (int) cover_relations_pool[i] / p;
+      unsigned int v2 = cover_relations_pool[i] % p;
+      if (v1 == v2)
+        continue;
+
+      if (ctx.get_verbose())
+        std::cout << "Testing node swap: " << M_new.poset[v1].event_id << ", "
+                  << M_new.poset[v2].event_id << std::endl;
+
+      M_new.swap_node(v1, v2);
       if (ctx.get_verbose())
         M_new.print_cover_relations();
 
@@ -328,8 +359,8 @@ double propose_edge(
         break;
     }
     if (i == p * p)
-      std::cout << "Warning: All moves yielded a poset with lower fraction "
-                << "of compatible observations" << std::endl;
+      std::cout << "Warning: All swap-node moves yielded a poset with lower "
+                << "fraction of compatible observations" << std::endl;
     break;
   }
 

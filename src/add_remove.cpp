@@ -14,84 +14,93 @@
 #include "not_acyclic_exception.hpp"
 
 VectorXd scale_path_to_mutation(const Model& model) {
-  
-  VectorXd scale_cumulative(model.size());
+
+  VectorXd scale_cumulative = VectorXd::Zero(model.size());
+  auto id = boost::get(&Event::event_id, model.poset);
   /* Loop through nodes in topological order */
   for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
        v != model.topo_path.rend(); ++v) {
-    scale_cumulative[*v] = 1 / model.get_lambda()[*v];
-    double max_scale = -1;
+    scale_cumulative[model.poset[*v].event_id] = 1.0 / model.get_lambda()[model.poset[*v].event_id];
+    double max_scale = -1.0;
     /* Loop through (direct) predecessors/parents of node v */
     boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
     for (boost::tie(in_begin, in_end) = boost::in_edges(*v, model.poset);
          in_begin != in_end; ++in_begin)
       max_scale =
-        std::max(max_scale, scale_cumulative[source(*in_begin, model.poset)]);
+        std::max(max_scale, scale_cumulative[boost::get(id, source(*in_begin, model.poset))]);
       
-    if (max_scale > -1)
-      scale_cumulative[*v] += max_scale;
+    if (max_scale > -1.0)
+      scale_cumulative[model.poset[*v].event_id] += max_scale;
   }
   return scale_cumulative;
 }
 
 void add_all(RowVectorXb& genotype, const Model& model) {
-  
+
+  auto id = boost::get(&Event::event_id, model.poset);
   /* Loop through nodes in reverse topological order */
   for (node_container::const_iterator v = model.topo_path.begin();
        v != model.topo_path.end(); ++v) {
-    if (genotype[*v]) {
+    if (genotype[model.poset[*v].event_id]) {
       /* Loop through (direct) predecessors/parents of node v */
       boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
       for (boost::tie(in_begin, in_end) = boost::in_edges(*v, model.poset);
-           in_begin != in_end; ++in_begin)
-        if (!genotype[source(*in_begin, model.poset)])
-          genotype[source(*in_begin, model.poset)] = true;
+           in_begin != in_end; ++in_begin) {
+        Node u = boost::get(id, source(*in_begin, model.poset));
+        if (!genotype[u])
+          genotype[u] = true;
+      }
     }
   }
 }
 
 void add_parents(RowVectorXb& genotype, const Node v, const Model& model) {
 
-  if (genotype[v]) {
+  if (genotype[model.poset[v].event_id]) {
+    auto id = boost::get(&Event::event_id, model.poset);
     /* Loop through predecessors/parents of node v */
     boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
     for (boost::tie(in_begin, in_end) = boost::in_edges(v, model.poset);
          in_begin != in_end; ++in_begin) {
-      Node u = source(*in_begin, model.poset);
+      Node u = boost::get(id, source(*in_begin, model.poset));
       if (!genotype[u])
         genotype[u] = true;
-      add_parents(genotype, u, model);
+      add_parents(genotype, source(*in_begin, model.poset), model);
     }
   }
 }
 
 void remove_all(RowVectorXb& genotype, const Model& model) {
 
+  auto id = boost::get(&Event::event_id, model.poset);
   /* Loop through nodes in topological order */
   for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
        v != model.topo_path.rend(); ++v) {
-    if (!genotype[*v]) {
+    if (!genotype[model.poset[*v].event_id]) {
       /* Loop through (direct) successor/children of node v */
       boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end;
       for (boost::tie(out_begin, out_end) = out_edges(*v, model.poset);
-           out_begin != out_end; ++out_begin)
-        if (genotype[target(*out_begin, model.poset)])
-          genotype[target(*out_begin, model.poset)] = false;
+           out_begin != out_end; ++out_begin) {
+        Node w = boost::get(id, target(*out_begin, model.poset));
+        if (genotype[w])
+          genotype[w] = false;
+      }
     }
   }
 }
 
 void remove_children(RowVectorXb& genotype, const Node v, const Model& model) {
   
-  if (!genotype[v]) {
+  if (!genotype[model.poset[v].event_id]) {
+    auto id = boost::get(&Event::event_id, model.poset);
     /* Loop through (direct) successor/children of node v */
     boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end;
     for (boost::tie(out_begin, out_end) = out_edges(v, model.poset);
          out_begin != out_end; ++out_begin) {
-      Node u = target(*out_begin, model.poset);
-      if (genotype[u])
-        genotype[u] = false;
-      remove_children(genotype, u, model);
+      Node w = boost::get(id, target(*out_begin, model.poset));
+      if (genotype[w])
+        genotype[w] = false;
+      remove_children(genotype, target(*out_begin, model.poset), model);
     }
   }
 }
@@ -109,7 +118,7 @@ RowVectorXb draw_sample(const RowVectorXb& genotype, const Model& model,
       q_choice = add_weight[idx_add] / add_weight.sum();
       sample[idx_add] = true;
       if (compatible)
-        add_parents(sample, idx_add, model);
+        add_parents(sample, model.get_node_idx(idx_add), model);
       else
         add_all(sample, model);
       break;
@@ -118,7 +127,7 @@ RowVectorXb draw_sample(const RowVectorXb& genotype, const Model& model,
       q_choice = remove_weight[idx_remove] / remove_weight.sum();
       sample[idx_remove] = false;
       if (compatible)
-        remove_children(sample, idx_remove, model);
+        remove_children(sample, model.get_node_idx(idx_remove), model);
       else
         remove_all(sample, model);
       break;
@@ -166,28 +175,28 @@ MatrixXd generate_mutation_times(
      * see https://eigen.tuxfamily.org/dox/group__QuickRefPage.html)
      */
     VectorXd time_parents_max = VectorXd::Zero(N);
-    if (!parents[*v].empty()) {
-      MatrixXd aux1 = MatrixXd::Zero(N, parents[*v].size());
+    if (!parents[model.poset[*v].event_id].empty()) {
+      MatrixXd aux1 = MatrixXd::Zero(N, parents[model.poset[*v].event_id].size());
 
-      for (unsigned int u = 0; u < parents[*v].size(); ++u)
-        aux1.col(u) = time_events_sum.col(parents[*v][u]);
+      for (unsigned int u = 0; u < parents[model.poset[*v].event_id].size(); ++u)
+        aux1.col(u) = time_events_sum.col(parents[model.poset[*v].event_id][u]);
       time_parents_max = aux1.rowwise().maxCoeff();
     }
 
     /* if x = 1, Z ~ TExp(lambda, 0, sampling_time - time{max parents})
      * if x = 0, Z ~ TExp(lambda, 0, inf)
      */
-    VectorXd cutoff = obs.col(*v).select(sampling_time - time_parents_max,
+    VectorXd cutoff = obs.col(model.poset[*v].event_id).select(sampling_time - time_parents_max,
                               std::numeric_limits<double>::infinity());
-    VectorXd time = rtexp(N, model.get_lambda()[*v], cutoff, rng);
+    VectorXd time = rtexp(N, model.get_lambda()[model.poset[*v].event_id], cutoff, rng);
 
-    VectorXd aux2 = obs.col(*v).select(time_parents_max,
+    VectorXd aux2 = obs.col(model.poset[*v].event_id).select(time_parents_max,
                             time_parents_max.cwiseMax(sampling_time));
-    time_events_sum.col(*v) = aux2 + time;
-    time_events.col(*v) = time_events_sum.col(*v) - time_parents_max;
+    time_events_sum.col(model.poset[*v].event_id) = aux2 + time;
+    time_events.col(model.poset[*v].event_id) = time_events_sum.col(model.poset[*v].event_id) - time_parents_max;
 
-    dens += dexp_log(time, model.get_lambda()[*v]) -
-      pexp_log(cutoff, model.get_lambda()[*v]);
+    dens += dexp_log(time, model.get_lambda()[model.poset[*v].event_id]) -
+      pexp_log(cutoff, model.get_lambda()[model.poset[*v].event_id]);
   }
   return time_events;
 }
@@ -207,7 +216,7 @@ VectorXd cbn_density_log(const MatrixXd& time, const VectorXd& lambda) {
 
 RcppExport SEXP _scale_path_to_mutation(SEXP posetSEXP, SEXP lambdaSEXP) {
   try {
-    // Convert input to C++ types
+    /* Convert input to C++ types */
     const MapMati poset(Rcpp::as<MapMati>(posetSEXP));
     const MapVecd lambda(Rcpp::as<MapVecd>(lambdaSEXP));
     
@@ -220,10 +229,10 @@ RcppExport SEXP _scale_path_to_mutation(SEXP posetSEXP, SEXP lambdaSEXP) {
       throw not_acyclic_exception();
     M.topological_sort();
     
-    // Call the underlying C++ function
+    /* Call the underlying C++ function */
     VectorXd scale_cumulative = scale_path_to_mutation(M);
-    
-    // Return the result as a SEXP
+
+    /* Return the result as a SEXP */
     return Rcpp::wrap( scale_cumulative );
   } catch  (...) {
     handle_exceptions();
@@ -238,7 +247,7 @@ RcppExport SEXP _draw_sample(
     /* Convert input to C++ types */
     const RowVectorXb& genotype = Rcpp::as<RowVectorXb>(genotypeSEXP);
     const MapMati poset(Rcpp::as<MapMati>(posetSEXP));
-    const bool move = Rcpp::as<bool>(moveSEXP);
+    const unsigned int move = Rcpp::as<unsigned int>(moveSEXP);
     const MapVecd q_prob(Rcpp::as<MapVecd>(q_probSEXP));
     const int seed = Rcpp::as<int>(seedSEXP);
 
@@ -277,7 +286,7 @@ RcppExport SEXP _generate_mutation_times(
     SEXP obsSEXP, SEXP posetSEXP, SEXP lambdaSEXP, SEXP timeSEXP,
     SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP, SEXP seedSEXP) {
   try {
-    // Convert input to C++ types
+    /* Convert input to C++ types */
     const MatrixXb& obs = Rcpp::as<MatrixXb>(obsSEXP);
     const MapMati poset(Rcpp::as<MapMati>(posetSEXP));
     const MapVecd lambda(Rcpp::as<MapVecd>(lambdaSEXP));
@@ -296,12 +305,12 @@ RcppExport SEXP _generate_mutation_times(
     M.topological_sort();
     
     Context ctx(seed);
-    // Call the underlying C++ function
+    /* Call the underlying C++ function */
     VectorXd proposal_dens = VectorXd::Zero(obs.rows());
     MatrixXd Tdiff = generate_mutation_times(obs, M, proposal_dens, time,
                                              ctx.rng, sampling_times_available);
 
-    // Return the result as a SEXP
+    /* Return the result as a SEXP */
     return Rcpp::List::create(Rcpp::Named("Tdiff")=Tdiff,
                               Rcpp::Named("proposal_density")=proposal_dens);
   } catch  (...) {

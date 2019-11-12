@@ -64,14 +64,6 @@ void Model::topological_sort() {
   boost::topological_sort(poset, std::back_inserter(topo_path));
 }
 
-template <typename PropertyMap>
-void Model::print_cover_relations(PropertyMap name) {
-  boost::graph_traits<Poset>::edge_iterator ei, ei_end;
-  for (boost::tie(ei, ei_end) = boost::edges(poset); ei != ei_end; ++ei)
-    std::cout << get(name, source(*ei, poset)) << " --> "
-              << get(name, target(*ei, poset)) << std::endl;
-}
-
 //' @description Obtain (direct) predecessors/parents per node
 std::vector<node_container> Model::get_direct_predecessors() const {
 
@@ -83,8 +75,8 @@ std::vector<node_container> Model::get_direct_predecessors() const {
     boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
     for (boost::tie(in_begin, in_end) = boost::in_edges(*v, poset);
          in_begin != in_end; ++in_begin) {
-      Node u = source(*in_begin, poset);
-      parents[*v].push_back(u);
+      Node u = boost::get(boost::get(&Event::event_id, poset), source(*in_begin, poset));
+      parents[poset[*v].event_id].push_back(u);
     }
   }
   return parents;
@@ -313,8 +305,28 @@ void Model::remove_relation(const Node& u, const Node& v) {
   }
 }
 
+void Model::swap_node(const Node& u, const Node& v) {
+  std::swap(poset[u].event_id, poset[v].event_id);
+  _update_children = true;
+  _update_node_idx = true;
+}
+
+void Model::update_node_idx() {
+  for (unsigned int i = 0; i < _size; ++i)
+    _node_idx[poset[i].event_id] = i;
+  _update_node_idx = false;
+}
+
+template <typename PropertyMap>
+void Model::print_cover_relations(PropertyMap name) {
+  boost::graph_traits<Poset>::edge_iterator ei, ei_end;
+  for (boost::tie(ei, ei_end) = boost::edges(poset); ei != ei_end; ++ei)
+    std::cout << boost::get(name, source(*ei, poset)) << " --> "
+              << boost::get(name, target(*ei, poset)) << std::endl;
+}
+
 void Model::print_cover_relations() {
-  print_cover_relations(boost::get(boost::vertex_index, poset));
+  print_cover_relations(boost::get(&Event::event_id, poset));
 }
 
 void Model::clear() {

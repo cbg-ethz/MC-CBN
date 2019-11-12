@@ -17,6 +17,7 @@
 #include <random>
 #include <vector>
 #include <memory>
+#include "rng_utils.hpp"
 
 using Eigen::Map;
 using Eigen::VectorXd;
@@ -31,14 +32,19 @@ typedef Map<VectorXi> MapVeci;
 typedef Map<MatrixXi> MapMati;
 typedef Map<MatrixXd> MapMatd;
 typedef Map<RowVectorXd> MapRowVecd;
-typedef boost::adjacency_list<boost::hash_setS, boost::vecS, boost::bidirectionalS> Poset;
+
+struct Event {
+  unsigned int event_id;
+};
+
+typedef boost::adjacency_list<
+  boost::hash_setS, boost::vecS, boost::bidirectionalS, Event> Poset;
 typedef boost::graph_traits<Poset>::vertices_size_type vertices_size_type;
 typedef boost::graph_traits<Poset>::vertex_descriptor Node;
 typedef std::pair<vertices_size_type, vertices_size_type> Edge;
 typedef std::vector<Node> node_container;
 typedef std::vector<Edge> edge_container;
 
-#include "rng_utils.hpp"
 
 class Context {
 public:
@@ -74,14 +80,18 @@ public:
 
   /* Default constructor */
   Model(float lambda_s=1.0, bool cycle=false, bool reduction=false,
-        bool update_children=true) : cycle(cycle), reduction_flag(reduction),
-        _lambda_s(lambda_s), _update_children(update_children), _size(0) {}
+        bool update_children=true, bool update_node_idx=true) : cycle(cycle),
+        reduction_flag(reduction), _lambda_s(lambda_s),
+        _update_children(update_children), _update_node_idx(update_node_idx),
+        _size(0) {}
 
   /* Parametrized constructor */
   Model(unsigned int p, float lambda_s=1.0, bool cycle=false,
-        bool reduction=false, bool update_children=true) : poset(p),
-        cycle(cycle), reduction_flag(reduction), _lambda(p), _lambda_s(lambda_s),
-        _children(p), _update_children(update_children), _size(p) {
+        bool reduction=false, bool update_children=true,
+        bool update_node_idx=true) : poset(p), cycle(cycle),
+        reduction_flag(reduction), _lambda(p), _lambda_s(lambda_s),
+        _children(p), _update_children(update_children), _node_idx(p),
+        _update_node_idx(update_node_idx), _size(p) {
     topo_path.reserve(p);
   }
 
@@ -90,8 +100,13 @@ public:
          bool cycle=false, bool reduction=false, bool update_children=true) :
     poset(edge_list.begin(), edge_list.end(), p), cycle(cycle),
     reduction_flag(reduction), _lambda(p), _lambda_s(lambda_s),
-    _children(p), _update_children(update_children), _size(p) {
+    _children(p), _update_children(update_children), _node_idx(p), _size(p) {
     topo_path.reserve(p);
+    for (unsigned int i = 0; i < p; ++i) {
+      poset[i].event_id = i;
+      _node_idx[i] = i;
+      _update_node_idx = false;
+    }
   }
 
   /* Copy constructor */
@@ -99,7 +114,8 @@ public:
   cycle(m.cycle), reduction_flag(m.reduction_flag), _lambda(m.get_lambda()),
   _lambda_s(m.get_lambda_s()), _epsilon(m.get_epsilon()),
   _llhood(m.get_llhood()), _children(m.get_children()),
-  _update_children(m.get_update_children()), _size(m.size()) {}
+  _update_children(m.get_update_children()), _node_idx(m.get_node_idx()),
+  _update_node_idx(m.get_update_node_idx()), _size(m.size()) {}
 
   inline vertices_size_type size() const;
 
@@ -128,7 +144,13 @@ public:
 
   inline const std::vector< std::unordered_set<Node> >& get_children() const;
 
+  inline const std::vector<int>& get_node_idx() const;
+
+  inline const int get_node_idx(const unsigned int i) const;
+
   inline bool get_update_children() const;
+
+  inline bool get_update_node_idx() const;
 
   void has_cycles();
 
@@ -150,6 +172,10 @@ public:
 
   void remove_relation(const Node& u, const Node& v);
 
+  void swap_node(const Node& u, const Node& v);
+
+  void update_node_idx();
+
   template <typename PropertyMap>
   void print_cover_relations(PropertyMap name);
 
@@ -164,6 +190,8 @@ protected:
   double _llhood;
   std::vector< std::unordered_set<Node> > _children;
   bool _update_children;
+  std::vector<int> _node_idx;
+  bool _update_node_idx;
   vertices_size_type _size;
 };
 
@@ -223,8 +251,21 @@ const std::vector< std::unordered_set<Node> >& Model::get_children() const {
   return _children;
 }
 
+const std::vector<int>& Model::get_node_idx() const {
+  return _node_idx;
+}
+
+const int Model::get_node_idx(const unsigned int i) const {
+  return _node_idx[i];
+}
+
+
 bool Model::get_update_children() const {
   return _update_children;
+}
+
+bool Model::get_update_node_idx() const {
+  return _update_node_idx;
 }
 
 DataImportanceSampling importance_weight(
