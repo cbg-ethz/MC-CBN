@@ -138,36 +138,38 @@ MatrixXb sample_genotypes(
     VectorXd& T_sampling, Context::rng_type& rng,
     const bool sampling_times_available=false) {
 
-  // Initialization and instantiation of variables
+  /* Initialization and instantiation of variables */
   const vertices_size_type p = model.size();  // Number of mutations / events
   MatrixXd T_events_sum;
   MatrixXb obs;
   T_events_sum.setZero(N, p);
   obs.setConstant(N, p, false);
+  auto id = boost::get(&Event::event_id, model.poset);
 
   /* Generate occurence times T_events_{j} ~ Exp(lambda_{j}) */
   for (unsigned int j = 0; j < p; ++j)
     T_events.col(j) = rexp(N, model.get_lambda(j), rng);
 
+
   /* Use sampling times when available */
   if (!sampling_times_available)
     T_sampling = rexp(N, model.get_lambda_s(), rng);
 
+  VectorXd T_max = VectorXd::Zero(N);
   /* Loop through nodes in topological order */
   for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
        v != model.topo_path.rend(); ++v) {
-    for (unsigned int i = 0; i < N; ++i) {
-      double T_max = 0.0;
-      /* Loop through parents of node v */
-      boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
-      for (boost::tie(in_begin, in_end) = boost::in_edges(*v, model.poset);
-           in_begin != in_end; ++in_begin)
-        if (T_events_sum(i, source(*in_begin, model.poset)) > T_max)
-          T_max = T_events_sum(i, source(*in_begin, model.poset));
-      T_events_sum(i, *v) = T_events(i, *v) + T_max;
-      if (T_events_sum(i, *v) <= T_sampling(i))
-        obs(i, *v) = true;
+    T_max = VectorXd::Zero(N);
+    /* Loop through parents of node v */
+    boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
+    for (boost::tie(in_begin, in_end) = boost::in_edges(*v, model.poset);
+         in_begin != in_end; ++in_begin) {
+      Node u = boost::get(id, source(*in_begin, model.poset));
+      T_max = (T_events_sum.col(u).array() > T_max.array()).select(T_events_sum.col(u), T_max);
     }
+    T_events_sum.col(model.poset[*v].event_id) = T_events.col(model.poset[*v].event_id) + T_max;
+    obs.col(model.poset[*v].event_id) =
+      (T_events_sum.col(model.poset[*v].event_id).array() <= T_sampling.array()).select(true, obs.col(model.poset[*v].event_id));
   }
   return obs;
 }
@@ -185,24 +187,25 @@ MatrixXd sample_times(
   const vertices_size_type p = model.size();  // Number of mutations / events
   MatrixXd T_events_sum;
   T_events_sum.setZero(N, p);
+  auto id = boost::get(&Event::event_id, model.poset);
 
   /* Generate occurence times T_events_{j} ~ Exp(lambda_{j}) */
   for (unsigned int j = 0; j < p; ++j)
     T_events.col(j) = rexp(N, model.get_lambda(j), rng);
 
+  VectorXd T_max = VectorXd::Zero(N);
   /* Loop through nodes in topological order */
   for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
        v != model.topo_path.rend(); ++v) {
-    for (unsigned int i = 0; i < N; ++i) {
-      double T_max = 0.0;
-      /* Loop through parents of node v */
-      boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
-      for (boost::tie(in_begin, in_end) = boost::in_edges(*v, model.poset);
-           in_begin != in_end; ++in_begin)
-        if (T_events_sum(i, source(*in_begin, model.poset)) > T_max)
-          T_max = T_events_sum(i, source(*in_begin, model.poset));
-      T_events_sum(i, *v) = T_events(i, *v) + T_max;
+    T_max = VectorXd::Zero(N);
+    /* Loop through parents of node v */
+    boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
+    for (boost::tie(in_begin, in_end) = boost::in_edges(*v, model.poset);
+         in_begin != in_end; ++in_begin) {
+      Node u = boost::get(id, source(*in_begin, model.poset));
+      T_max = (T_events_sum.col(u).array() > T_max.array()).select(T_events_sum.col(u), T_max);
     }
+    T_events_sum.col(model.poset[*v].event_id) = T_events.col(model.poset[*v].event_id) + T_max;
   }
   return T_events_sum;
 }
@@ -224,9 +227,8 @@ MatrixXb generate_genotypes(
   /* Loop through nodes in topological order */
   for (node_container::const_reverse_iterator v = model.topo_path.rbegin();
        v != model.topo_path.rend(); ++v)
-    for (unsigned int i = 0; i < N; ++i)
-      if (T_events_sum(i, *v) <= T_sampling(i))
-        obs(i, *v) = true;
+    obs.col(model.poset[*v].event_id) =
+      (T_events_sum.col(model.poset[*v].event_id).array() <= T_sampling.array()).select(true, obs.col(model.poset[*v].event_id));
 
   return obs;
 }
@@ -260,6 +262,8 @@ double obs_log_likelihood(
     if (sampling == "add-remove") {
       scale_cumulative.resize(p);
       scale_cumulative = scale_path_to_mutation(model);
+      if (model.get_update_node_idx())
+        model.update_node_idx();
     } else if (sampling == "pool") {
       K = p * L;
       Tdiff_pool.resize(K, p);
@@ -582,7 +586,11 @@ double MCEM_hcbn(
   MatrixXd Tdiff_pool;
   VectorXd scale_cumulative;
 
-  if (sampling == "pool") {
+  if (sampling == "add-remove") {
+    scale_cumulative.resize(p);
+    if (model.get_update_node_idx())
+      model.update_node_idx();
+  } else if (sampling == "pool") {
     // if (p < 19) {
     //   K = std::max((unsigned int) pow(2, p + 1), 2 * L);
     // } else {
@@ -633,7 +641,6 @@ double MCEM_hcbn(
      * and event
      */
     if (sampling == "add-remove") {
-      scale_cumulative.resize(p);
       scale_cumulative = scale_path_to_mutation(model);
     } else if (sampling == "pool") {
       /* All threads share the same pool of mutation times */
@@ -990,7 +997,7 @@ RcppExport SEXP _sample_genotypes(
 
   using namespace Rcpp;
   try {
-    // Convert input to C++ types
+    /* Convert input to C++ types */
     const unsigned int N = as<unsigned int>(NSEXP);
     const MapMati poset(as<MapMati>(posetSEXP));
     const MapVecd lambda(as<MapVecd>(lambdaSEXP));
@@ -1009,12 +1016,12 @@ RcppExport SEXP _sample_genotypes(
       throw not_acyclic_exception();
     M.topological_sort();
 
-    // Call the underlying C++ function
+    /* Call the underlying C++ function */
     Context ctx(seed);
     MatrixXb samples = sample_genotypes(N, M, T_events, T_sampling, ctx.rng,
                                         sampling_times_available);
 
-    // Return the result as a SEXP
+    /* Return the result as a SEXP*/
     return List::create(_["samples"]=samples, _["Tdiff"]=T_events,
                         _["sampling_time"]=T_sampling);
   } catch  (...) {
@@ -1029,7 +1036,7 @@ RcppExport SEXP _sample_times(
 
   using namespace Rcpp;
   try {
-    // Convert input to C++ types
+    /* Convert input to C++ types */
     const unsigned int N = as<unsigned int>(NSEXP);
     const MapMati poset(as<MapMati>(posetSEXP));
     const MapVecd lambda(as<MapVecd>(lambdaSEXP));
@@ -1045,11 +1052,11 @@ RcppExport SEXP _sample_times(
       throw not_acyclic_exception();
     M.topological_sort();
 
-    // Call the underlying C++ function
+    /* Call the underlying C++ function */
     Context ctx(seed);
     MatrixXd times = sample_times(N, M, T_events, ctx.rng);
 
-    // Return the result as a SEXP
+    /* Return the result as a SEXP */
     return List::create(_["mutation_times"]=times, _["Tdiff"]=T_events);
   } catch  (...) {
     handle_exceptions();
@@ -1063,7 +1070,7 @@ RcppExport SEXP _generate_genotypes(
 
   using namespace Rcpp;
   try {
-    // Convert input to C++ types
+    /* Convert input to C++ types */
     const MapMatd T_events_sum(as<MapMatd>(T_events_sumSEXP));
     const MapMati poset(as<MapMati>(posetSEXP));
     VectorXd T_sampling = as<MapVecd>(T_samplingSEXP);
@@ -1081,11 +1088,11 @@ RcppExport SEXP _generate_genotypes(
 
     Context ctx(seed);
 
-    // Call the underlying C++ function
+    /* Call the underlying C++ function */
     MatrixXb samples = generate_genotypes(T_events_sum, M, T_sampling, ctx.rng,
                                           sampling_times_available);
 
-    // Return the result as a SEXP
+    /* Return the result as a SEXP */
     return List::create(_["samples"]=samples, _["sampling_time"]=T_sampling);
   } catch  (...) {
     handle_exceptions();

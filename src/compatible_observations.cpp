@@ -11,15 +11,16 @@
 
 bool is_compatible(const RowVectorXb& genotype, const Model& model) {
 
+  auto id = boost::get(&Event::event_id, model.poset);
   /* Loop through nodes in reverse topological order */
   for (node_container::const_iterator v = model.topo_path.begin();
        v != model.topo_path.end(); ++v) {
-    if (genotype[*v]) {
+    if (genotype[model.poset[*v].event_id]) {
       /* Loop through (direct) predecessors/parents of node v */
       boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
       for (boost::tie(in_begin, in_end) = boost::in_edges(*v, model.poset);
            in_begin != in_end; ++in_begin)
-        if (!genotype[source(*in_begin, model.poset)])
+        if (!genotype[boost::get(id, source(*in_begin, model.poset))])
           return false;
     }
   }
@@ -32,14 +33,14 @@ bool is_compatible(const RowVectorXb& genotype, const Model& model) {
   boost::graph_traits<Poset>::vertex_iterator v_begin, v_end;
   for (boost::tie(v_begin, v_end) = boost::vertices(poset.poset);
        v_begin != v_end; ++v_begin) {
-    Node v = *v_begin;
+    Node v = model.poset[*v_begin].event_id;
     boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
-    for (boost::tie(in_begin, in_end) = boost::in_edges(*v_begin, poset.poset);
+    for (boost::tie(in_begin, in_end) = boost::in_edges(v, poset.poset);
          in_begin != in_end; ++in_begin) {*/
       /* There is an edge u -> v. Genotype is not compatible with the poset if
        * event v is observed, while event u has not occurred yet
        */
-      /*Node u = source(*in_begin, poset.poset);
+      /*Node u = source(model.poset[*in_begin].event_id, poset.poset);
       if (!genotype(u) && genotype(v))
         count += 1;
     }
@@ -50,13 +51,14 @@ bool is_compatible(const RowVectorXb& genotype, const Model& model) {
 int num_incompatible_events(const MatrixXb& genotype, const Model& poset) {
 
   int count = 0;
+  auto id = boost::get(&Event::event_id, poset.poset);
   boost::graph_traits<Poset>::edge_iterator ei, ei_end;
   for (boost::tie(ei, ei_end) = boost::edges(poset.poset); ei != ei_end; ++ei) {
     /* There is an edge u -> v. Genotype is not compatible with the poset if
      * event v is observed, while event u has not occurred yet
      */
-    Node u = source(*ei, poset.poset);
-    Node v = target(*ei, poset.poset);
+    Node u = boost::get(id, source(*ei, poset.poset));
+    Node v = boost::get(id, target(*ei, poset.poset));
     VectorXi aux = genotype.col(u).cast<int>() - genotype.col(v).cast<int>();
     count += (aux.array() < 0).count();
   }
