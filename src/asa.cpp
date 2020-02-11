@@ -158,7 +158,8 @@ double propose_edge(
     const RowVectorXd& weights, const float T, int& num_accept,
     const float factor_fraction_compatible, const unsigned int L,
     const std::string& sampling, const ControlEM& control_EM,
-    const bool sampling_times_available, const unsigned int thrds,
+    const bool sampling_times_available, MatrixXd& llhood_addRemove,
+    MatrixXd& llhood_swap, MatrixXd& llhood_preserve, const unsigned int thrds,
     Context& ctx) {
   
   const vertices_size_type p = M.size();  // Number of mutations / events
@@ -185,7 +186,7 @@ double propose_edge(
    */
   std::discrete_distribution<int> distribution({0.5, 0.0, 0.4, 0.1});
   int move = distribution(ctx.rng);
-  unsigned int i;
+  unsigned int i, v1, v2;
 
   switch(move) {
   case 0:
@@ -198,8 +199,8 @@ double propose_edge(
       M_new = M;
 
       /* Draw one relation at random */
-      unsigned int v1 = (int) cover_relations_pool[i] / p;
-      unsigned int v2 = cover_relations_pool[i] % p;
+      v1 = (int) cover_relations_pool[i] / p;
+      v2 = cover_relations_pool[i] % p;
       if (v1 == v2)
         continue;
 
@@ -237,6 +238,20 @@ double propose_edge(
     if (i == p * p)
       std::cout << "Warning: All add/remove moves yielded a poset with lower "
                 << "fraction of compatible observations" << std::endl;
+
+    if (llhood_addRemove(v1, v2) == 0.0) {
+      /* Initialization */
+      initialize_lambda(M_new, obs, control_EM.max_lambda);
+      M_new.set_epsilon((double) num_incompatible_events(obs, M_new) / (N * p));
+
+      /* Compute likelihood of the proposed/new poset */
+      llhood_new = MCEM_hcbn(
+        M_new, obs, times, weights, L, sampling, control_EM,
+        sampling_times_available, thrds, ctx);
+      llhood_addRemove(v1, v2) = llhood_new;
+    } else {
+      llhood_new = llhood_addRemove(v1, v2);
+    }
     break;
   case 1:
     /* Swap edge: remove and add edge.
@@ -276,6 +291,15 @@ double propose_edge(
     if (i == num_edges)
       std::cout << "Warning: All swap-edge moves yielded a poset with lower "
                 << "fraction of compatible observations" << std::endl;
+
+    /* Initialization */
+    initialize_lambda(M_new, obs, control_EM.max_lambda);
+    M_new.set_epsilon((double) num_incompatible_events(obs, M_new) / (N * p));
+
+    /* Compute likelihood of the proposed/new poset */
+    llhood_new = MCEM_hcbn(
+      M_new, obs, times, weights, L, sampling, control_EM,
+      sampling_times_available, thrds, ctx);
     break;
   case 2:
     /* Add or remove a cover relation. Add or remove an edge, while preserving
@@ -283,8 +307,8 @@ double propose_edge(
      */
     for (i = 0; i < p * p; ++i) {
       /* Draw one relation at random */
-      unsigned int v1 = (int) cover_relations_pool[i] / p;
-      unsigned int v2 = cover_relations_pool[i] % p;
+      v1 = (int) cover_relations_pool[i] / p;
+      v2 = cover_relations_pool[i] % p;
       if (v1 == v2)
         continue;
 
@@ -332,6 +356,20 @@ double propose_edge(
     if (i == p * p)
       std::cout << "Warning: All moves yielded a poset with lower fraction "
                 << "of compatible observations" << std::endl;
+
+    if (llhood_preserve(v1, v2) == 0.0) {
+      /* Initialization */
+      initialize_lambda(M_new, obs, control_EM.max_lambda);
+      M_new.set_epsilon((double) num_incompatible_events(obs, M_new) / (N * p));
+
+      /* Compute likelihood of the proposed/new poset */
+      llhood_new = MCEM_hcbn(
+        M_new, obs, times, weights, L, sampling, control_EM,
+        sampling_times_available, thrds, ctx);
+      llhood_preserve(v1, v2) = llhood_new;
+    } else {
+      llhood_new = llhood_preserve(v1, v2);
+    }
     break;
   case 3:
     /* Swap node labels */
@@ -340,8 +378,8 @@ double propose_edge(
       M_new = M;
 
       /* Draw two nodes at random */
-      unsigned int v1 = (int) cover_relations_pool[i] / p;
-      unsigned int v2 = cover_relations_pool[i] % p;
+      v1 = (int) cover_relations_pool[i] / p;
+      v2 = cover_relations_pool[i] % p;
       if (v1 == v2)
         continue;
 
@@ -361,17 +399,22 @@ double propose_edge(
     if (i == p * p)
       std::cout << "Warning: All swap-node moves yielded a poset with lower "
                 << "fraction of compatible observations" << std::endl;
+
+    if (llhood_swap(v1, v2) == 0.0) {
+      /* Initialization */
+      initialize_lambda(M_new, obs, control_EM.max_lambda);
+      M_new.set_epsilon((double) num_incompatible_events(obs, M_new) / (N * p));
+
+      /* Compute likelihood of the proposed/new poset */
+      llhood_new = MCEM_hcbn(
+        M_new, obs, times, weights, L, sampling, control_EM,
+        sampling_times_available, thrds, ctx);
+      llhood_swap(v1, v2) = llhood_swap(v2, v1) = llhood_new;
+    } else {
+      llhood_new = llhood_swap(v1, v2);
+    }
     break;
   }
-
-  /* Initialization */
-  initialize_lambda(M_new, obs, control_EM.max_lambda);
-  M_new.set_epsilon((double) num_incompatible_events(obs, M_new) / (N * p));
-
-  /* Compute likelihood of the proposed/new poset */
-  llhood_new = MCEM_hcbn(
-    M_new, obs, times, weights, L, sampling, control_EM,
-    sampling_times_available, thrds, ctx);
 
   /* Accept the proposed poset, if it improves the likelihood */
   if (llhood_new > llhood_current) {
@@ -380,6 +423,9 @@ double propose_edge(
     fraction_compatible = fraction_compatible_new;
     if (ctx.get_verbose())
       std::cout << "Log-likelihood new poset:" << llhood_new << std::endl;
+    llhood_addRemove.setZero();
+    llhood_swap.setZero();
+    llhood_preserve.setZero();
     return llhood_new;
   }
   
@@ -398,6 +444,9 @@ double propose_edge(
     fraction_compatible = fraction_compatible_new;
     if (ctx.get_verbose())
       std::cout << "Log-likelihood new poset:" << llhood_new << std::endl;
+    llhood_addRemove.setZero();
+    llhood_swap.setZero();
+    llhood_preserve.setZero();
     return llhood_new;
   } else
     return llhood_current;
@@ -418,6 +467,10 @@ double simulated_annealing(
   float acceptace_rate_current;
   float scaling_const = -std::log(2.0) / std::log(control_ASA.get_acceptance_rate());
   int num_accept = 0;
+
+  MatrixXd llhood_addRemove = MatrixXd::Zero(poset.size(), poset.size());
+  MatrixXd llhood_swap = MatrixXd::Zero(poset.size(), poset.size());
+  MatrixXd llhood_preserve = MatrixXd::Zero(poset.size(), poset.size());
 
   /* 1. Compute likelihood of the initial model */
   double llhood = MCEM_hcbn(
@@ -467,7 +520,8 @@ double simulated_annealing(
     llhood = propose_edge(
       poset, obs, llhood, fraction_compatible, times, weights, control_ASA.T,
       num_accept, control_ASA.get_compatible_fraction_factor(), L, sampling,
-      control_EM, sampling_times_available, thrds, ctx);
+      control_EM, sampling_times_available, llhood_addRemove, llhood_swap,
+      llhood_preserve, thrds, ctx);
     if (llhood > llhood_ML) {
       llhood_ML = llhood;
       poset_ML = poset;
