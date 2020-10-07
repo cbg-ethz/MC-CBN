@@ -149,7 +149,7 @@ learn_network_internal <- function(obs_events, sampling_times, max_iter=200, zet
                  nrOfSamples=nrOfSamplesForEStep, verbose=verbose, maxLambdaValue=maxLambdaValue, 
                  lambda_s=lambda_s, sampling_times_available=sampling_times_available)
       
-      lambdas = fit$par
+      lambdas = fit$lambda
       if(verbose) {
         print(fit)
         print(proc.time() - t1)
