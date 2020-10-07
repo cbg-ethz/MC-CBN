@@ -10,6 +10,7 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/graph_traits.hpp>
 #include <vector>
+#include <cassert>
 #include "mcem.hpp"
 #include "not_acyclic_exception.hpp"
 
@@ -56,15 +57,15 @@ void add_all(RowVectorXb& genotype, const Model& model) {
 
 void add_parents(RowVectorXb& genotype, const Node v, const Model& model) {
 
-  if (genotype[model.poset[v].event_id]) {
-    auto id = boost::get(&Event::event_id, model.poset);
-    /* Loop through predecessors/parents of node v */
-    boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
-    for (boost::tie(in_begin, in_end) = boost::in_edges(v, model.poset);
-         in_begin != in_end; ++in_begin) {
-      Node u = boost::get(id, source(*in_begin, model.poset));
-      if (!genotype[u])
-        genotype[u] = true;
+  assert(genotype[model.poset[v].event_id]);
+  auto id = boost::get(&Event::event_id, model.poset);
+  /* Loop through predecessors/parents of node v */
+  boost::graph_traits<Poset>::in_edge_iterator in_begin, in_end;
+  for (boost::tie(in_begin, in_end) = boost::in_edges(v, model.poset);
+       in_begin != in_end; ++in_begin) {
+    Node u = boost::get(id, source(*in_begin, model.poset));
+    if (!genotype[u]) {
+      genotype[u] = true;
       add_parents(genotype, source(*in_begin, model.poset), model);
     }
   }
@@ -91,15 +92,15 @@ void remove_all(RowVectorXb& genotype, const Model& model) {
 
 void remove_children(RowVectorXb& genotype, const Node v, const Model& model) {
   
-  if (!genotype[model.poset[v].event_id]) {
-    auto id = boost::get(&Event::event_id, model.poset);
-    /* Loop through (direct) successor/children of node v */
-    boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end;
-    for (boost::tie(out_begin, out_end) = out_edges(v, model.poset);
-         out_begin != out_end; ++out_begin) {
-      Node w = boost::get(id, target(*out_begin, model.poset));
-      if (genotype[w])
-        genotype[w] = false;
+  assert(!genotype[model.poset[v].event_id]);
+  auto id = boost::get(&Event::event_id, model.poset);
+  /* Loop through (direct) successor/children of node v */
+  boost::graph_traits<Poset>::out_edge_iterator out_begin, out_end;
+  for (boost::tie(out_begin, out_end) = out_edges(v, model.poset);
+       out_begin != out_end; ++out_begin) {
+    Node w = boost::get(id, target(*out_begin, model.poset));
+    if (genotype[w]) {
+      genotype[w] = false;
       remove_children(genotype, target(*out_begin, model.poset), model);
     }
   }
