@@ -36,6 +36,8 @@ lambda_s = 1
 # generate p random mutation rates uniformly distributed between lambda_s/3 to 3lambda_s.  
 lambdas = runif(p, 1/3*lambda_s, 3*lambda_s)
 ```
+
+### OT-CBN
 _N_ genotypes are simulated from the true CBN model i.e., _poset_ and _mutation rates_ using _sample_genotypes_
 ```
 # Simulate genotypes and sequencing times consistent with poset and mutation rates
@@ -48,7 +50,7 @@ est_lambda = estimate_mutation_rates(true_poset, simGenotypes$obs_events, simGen
 ```
 We simply compare relative absoulte errors of estimates using the following command
 ```
-abs(est_lambda$par - lambdas)/lambdas
+abs(est_lambda$lambda - lambdas)/lambdas
 ```
 _learn_network_ can be used to perform poset learning using genotypes and sequencing times
 ```
@@ -63,6 +65,27 @@ In order to obtain MLE poset(network), we postprocess the output of _learn_netwo
 # MLE network
 mle_index = which.max(fit$logliks)
 plot_poset(fit$posets[[mle_index]])
+```
+### H-CBN
+Now, we generate genotypes from the true CBN model, but in addition, we simulate noisy observations
+```
+simGenotypes = sample_genotypes(N, true_poset, sampling_param = lambda_s, lambdas=lambdas, eps=0.01)
+```
+
+We estimate model parameters using _MCEM.hcbn_
+```
+lambda0 = runif(p, 1/3*lambda_s, 3*lambda_s)
+est_params = MCEM.hcbn(lambda0, true_poset, simGenotypes$obs_events, lambda.s=lambda_s, L=100, eps=0.01)
+```
+
+To learn the poset from the data, we use _adaptive.simulated.annealing_
+```
+# Initial poset
+posets = candidate_posets(simGenotypes$obs_events, rep(1, N), 0.9)
+poset0 = posets[[length(posets)]]
+
+fit = adaptive.simulated.annealing(poset0, simGenotypes$obs_events, L=100,
+				   max.iter.asa=10)
 ```
 
 ### Contributions
