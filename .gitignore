@@ -12,3 +12,18 @@
 vignettes/*.html
 vignettes/*.pdf
 .Rproj.user
+
+src/*.o
+src/*.so
+
+# Autotools
+src/Makevars
+src/stamp-h1
+config.*
+configure
+aclocal.m4
+autom4te.cache/
+install-sh
+missing
+
+mccbn_*.tar.gz
