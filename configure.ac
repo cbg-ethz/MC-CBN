@@ -72,6 +72,8 @@ mccbn_LDLIBS="${mccbn_LDLIBS} $RLAPACK $RFORT"
   
 # Other dependencies
 AC_OPENMP
+AX_BOOST_BASE([1.59.0], [], [AC_MSG_ERROR([did not find the boost headers])])
+
 
 # Write the flags into the src/Makevars file
 AC_SUBST([PKG_CPPFLAGS], ["${PKG_CPPFLAGS}"])
@@ -80,7 +82,8 @@ AC_SUBST([mccbn_LDLIBS])
 AC_SUBST([mccbn_CPPFLAGS])
 AC_SUBST([OPENMP_CXXFLAGS])
 
-AC_CONFIG_FILES([src/Makevars])
+AC_CONFIG_FILES([src/Makevars Makefile])
+AM_INIT_AUTOMAKE([foreign])
 AC_OUTPUT
 
 AC_MSG_RESULT([
@@ -88,6 +91,6 @@ AC_MSG_RESULT([
 
 	CXX:        ${CXX}
 	CXXFLAGS:   ${CXXFLAGS} ${OPENMP_CXXFLAGS}
-	CPPFLAGS:   ${CPPFLAGS} ${mccbn_CPPFLAGS} ${PKG_CPPFLAGS}
-	LIBS:       ${PKG_LIBS} ${mccbn_LDLIBS}
+	CPPFLAGS:   ${CPPFLAGS} ${mccbn_CPPFLAGS} ${PKG_CPPFLAGS} ${BOOST_CPPFLAGS}
+	LIBS:       ${PKG_LIBS} ${mccbn_LDLIBS} ${BOOST_LDFLAGS}
 ])
