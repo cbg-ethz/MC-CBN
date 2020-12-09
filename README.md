@@ -88,6 +88,29 @@ fit = adaptive.simulated.annealing(poset0, simGenotypes$obs_events, L=100,
 				   max.iter.asa=10)
 ```
 
+## Installation
+
+### Dependencies
+
+MC-CBN requires the following software:
+
+- OpenMP
+- Boost C++ library
+- (optional) Intel Math Kernel Library (MKL)
+- Autotools (Autoconf >= 2.69, Automake >= 1.15, m4)
+
+After cloning the repository, go to the corresponding directory and type:
+
+```
+autoreconf -vif -I m4
+```
+
+Then build and install the package:
+```
+R CMD build .
+R CMD INSTALL mccbn_<version>.tar.gz
+```
+
 ### Contributions
 - [Hesam Montazeri](https://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=168604)
 - [Susana Posada Cespedes](https://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=192769)
