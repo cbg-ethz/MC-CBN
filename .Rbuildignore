@@ -1,3 +1,11 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
 ^src/Makevars$
+^Makefile$
+^NOTES.txt$
+^clean$
+^cpp$
+src/Makevars.in.old
+src/Makevars_tmp
+src/debugging_helper.hpp
+src/poset.cpp
