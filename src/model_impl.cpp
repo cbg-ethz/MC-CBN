@@ -334,3 +334,26 @@ void Model::clear() {
   cycle = false;
   reduction_flag = false;
 }
+
+//' @description Extract cover relations from an adjacency matrix
+edge_container adjacency_mat2list(const MatrixXi& poset) {
+  const auto p = poset.rows();
+  edge_container edge_list;
+  for (unsigned int i = 0; i < p; ++ i)
+    for (unsigned int j = 0; j < p; ++j)
+      if (poset(i, j) == 1)
+        edge_list.push_back(Edge(i, j));
+      
+      return edge_list;
+}
+
+//' @description Build an adjacency matrix from the adjacency list
+MatrixXi adjacency_list2mat(const Model& model) {
+  MatrixXi poset;
+  poset.setZero(model.size(), model.size());
+  auto id = boost::get(&Event::event_id, model.poset);
+  boost::graph_traits<Poset>::edge_iterator ei, ei_end;
+  for (boost::tie(ei, ei_end) = boost::edges(model.poset); ei != ei_end; ++ei)
+    poset(boost::get(id, source(*ei, model.poset)), boost::get(id, target(*ei, model.poset))) = 1;
+  return poset;
+}
