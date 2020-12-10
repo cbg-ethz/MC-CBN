@@ -69,11 +69,18 @@ AC_SEARCH_LIBS([cblas_dgemm], [openblas],
 RLAPACK=`"${R_BIN}" CMD config LAPACK_LIBS`
 RFORT=`"${R_BIN}" CMD config FLIBS`
 mccbn_LDLIBS="${mccbn_LDLIBS} $RLAPACK $RFORT"
-  
+
 # Other dependencies
 AC_OPENMP
 AX_BOOST_BASE([1.59.0], [], [AC_MSG_ERROR([did not find the boost headers])])
+AC_ARG_WITH([mkl], AS_HELP_STRING([--with-mklldflags], [Compiler flags for Intel MKL (optional)]))
 
+# Add MKL LDFLAGS
+AS_IF([test "x$with_mklldflags" = "xyes"], [
+  AX_APPEND_LINK_FLAGS([$with_mklldflags], [LDFLAGS])
+  AC_DEFINE(MKL_ENABLED, [1], "Use Intel MKL")
+  AC_SUBST(MKL_LDFLAGS, [$with_mklldflags])
+])
 
 # Write the flags into the src/Makevars file
 AC_SUBST([PKG_CPPFLAGS], ["${PKG_CPPFLAGS}"])
@@ -89,8 +96,10 @@ AC_OUTPUT
 AC_MSG_RESULT([
     $PACKAGE_NAME
 
-	CXX:        ${CXX}
-	CXXFLAGS:   ${CXXFLAGS} ${OPENMP_CXXFLAGS}
-	CPPFLAGS:   ${CPPFLAGS} ${mccbn_CPPFLAGS} ${PKG_CPPFLAGS} ${BOOST_CPPFLAGS}
-	LIBS:       ${PKG_LIBS} ${mccbn_LDLIBS} ${BOOST_LDFLAGS}
+	CXX:            ${CXX}
+	CXXFLAGS:       ${CXXFLAGS} ${OPENMP_CXXFLAGS}
+	CPPFLAGS:       ${CPPFLAGS} ${mccbn_CPPFLAGS} ${PKG_CPPFLAGS}
+	Boost_CPPFLAGS: ${BOOST_CPPFLAGS}
+	MKL_LDFLAGS:    ${MKL_LDFLAGS}
+	LIBS:           ${PKG_LIBS} ${mccbn_LDLIBS} ${BOOST_LDFLAGS}
 ])

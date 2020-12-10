@@ -15,7 +15,6 @@
 using Eigen::Map;
 using Eigen::VectorXd;
 
-#define MKL_ENABLED
 
 template <typename RNG_TYPE>
 VectorXd rtexp(const unsigned int N, const double rate, const VectorXd& cutoff,

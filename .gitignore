@@ -17,6 +17,8 @@ src/*.o
 src/*.so
 
 # Autotools
+Makefile
+Makefile.in
 src/Makevars
 src/stamp-h1
 config.*
