@@ -111,6 +111,12 @@ R CMD build .
 R CMD INSTALL mccbn_<version>.tar.gz
 ```
 
+To compile with MKL, necessary compiler and linker flags can be determined with the help of the Intel MKL [Link Line Advisor](https://software.intel.com/content/www/us/en/develop/tools/oneapi/components/onemkl/link-line-advisor.html), e.g.:
+
+```
+R CMD build .
+R CMD INSTALL mccbn_<version>.tar.gz --configure-args="--with-mklcxxflags=\"-DMKL_ILP64 -m64 -I${MKLROOT}/include\" --with-mklldflags=\"-Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_ilp64.a ${MKLROOT}/lib/intel64/libmkl_sequential.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl\""
+```
 ### Contributions
 - [Hesam Montazeri](https://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=168604)
 - [Susana Posada Cespedes](https://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=192769)
