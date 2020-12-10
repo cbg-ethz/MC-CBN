@@ -73,19 +73,19 @@ mccbn_LDLIBS="${mccbn_LDLIBS} $RLAPACK $RFORT"
 # Other dependencies
 AC_OPENMP
 AX_BOOST_BASE([1.59.0], [], [AC_MSG_ERROR([did not find the boost headers])])
-AC_ARG_WITH([mkl], AS_HELP_STRING([--with-mkl], [Compiler flags for Intel MKL (optional)]))
-AC_ARG_WITH([mklldflags], AS_HELP_STRING([--with-mklldflags], [Linke flags for Intel MKL (optional)]))
+AC_ARG_WITH([mklcxxflags], AS_HELP_STRING([--with-mkl], [Compiler flags for Intel MKL (optional)]))
+AC_ARG_WITH([mklldflags], AS_HELP_STRING([--with-mklldflags], [Linker flags for Intel MKL (optional)]))
 
 # Add MKL FLAGS
-AS_IF([test "x$with_mkl" = "xyes" && test "x$with_mklldflags" = "xyes"], [
-	AX_APPEND_COMPILE_FLAGS([$with_mkl], [CXXFLAGS])
+AS_IF([test "x$with_mklcxxflags" != "xno" && test "x$with_mklldflags" != "xno"], [
+	AX_APPEND_COMPILE_FLAGS([$with_mklcxxflags], [CXXFLAGS])
 	CXXFLAGS=$( echo ${CXXFLAGS} | $SED -e 's/^ *//' -e 's/ *$//' )
 
   AX_APPEND_LINK_FLAGS([$with_mklldflags], [LDFLAGS])
   LDFLAGS=$( echo ${LDFLAGS} | $SED -e 's/^ *//' -e 's/ *$//' )
 
   AC_DEFINE(MKL_ENABLED, [1], "Use Intel MKL")
-  AC_SUBST(MKL_CXXFLAGS, [$with_mkl])
+  AC_SUBST(MKL_CXXFLAGS, [$with_mklcxxflags])
   AC_SUBST(MKL_LDFLAGS, [$with_mklldflags])
 ])
 
