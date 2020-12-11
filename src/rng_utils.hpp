@@ -9,6 +9,7 @@
 #ifndef RNG_UTILS_HPP
 #define RNG_UTILS_HPP
 
+#include <config.h>
 #include <limits>
 #include <RcppEigen.h>
 

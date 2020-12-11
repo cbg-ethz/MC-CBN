@@ -11,6 +11,7 @@ AC_INIT(
 	[https://github.com/cbg-ethz/MC-CBN])
 AC_CONFIG_HEADERS([src/config.h])
 AC_CONFIG_SRCDIR([src/mcem.cpp])
+AC_CONFIG_MACRO_DIR([m4])
 
 dnl Setup RBin
 : ${R_HOME=$(R RHOME)}
@@ -39,7 +40,6 @@ AC_REQUIRE_CPP
 # Check the C++ compiler using the CXX value set
 AC_PROG_CXX
 AC_PROG_SED
-AC_PROG_RANLIB
 
 AC_ARG_ENABLE(debug,
 AS_HELP_STRING([--enable-debug],
@@ -73,21 +73,27 @@ mccbn_LDLIBS="${mccbn_LDLIBS} $RLAPACK $RFORT"
 # Other dependencies
 AC_OPENMP
 AX_BOOST_BASE([1.59.0], [], [AC_MSG_ERROR([did not find the boost headers])])
-AC_ARG_WITH([mklcxxflags], AS_HELP_STRING([--with-mkl], [Compiler flags for Intel MKL (optional)]))
-AC_ARG_WITH([mklldflags], AS_HELP_STRING([--with-mklldflags], [Linker flags for Intel MKL (optional)]))
+AC_ARG_WITH([mklcxxflags],
+  [AS_HELP_STRING([--with-mklcxxflags=ARGS], [Compiler flags for Intel MKL (optional)])],
+  [], [with_mklcxxflags=no])
+AC_ARG_WITH([mklldflags],
+  [AS_HELP_STRING([--with-mklldflags=ARGS], [Linker flags for Intel MKL (optional)])],
+  [], [with_mklldflags=no])
 
 # Add MKL FLAGS
+AC_MSG_CHECKING([whether configure can enable MKL])
 AS_IF([test "x$with_mklcxxflags" != "xno" && test "x$with_mklldflags" != "xno"], [
+  AC_MSG_RESULT([yes])
 	AX_APPEND_COMPILE_FLAGS([$with_mklcxxflags], [CXXFLAGS])
 	CXXFLAGS=$( echo ${CXXFLAGS} | $SED -e 's/^ *//' -e 's/ *$//' )
 
   AX_APPEND_LINK_FLAGS([$with_mklldflags], [LDFLAGS])
   LDFLAGS=$( echo ${LDFLAGS} | $SED -e 's/^ *//' -e 's/ *$//' )
 
-  AC_DEFINE(MKL_ENABLED, [1], "Use Intel MKL")
+  AC_DEFINE([MKL_ENABLED], [1], [Use Intel MKL])
   AC_SUBST(MKL_CXXFLAGS, [$with_mklcxxflags])
   AC_SUBST(MKL_LDFLAGS, [$with_mklldflags])
-])
+], AC_MSG_RESULT([no]))
 
 # Write the flags into the src/Makevars file
 AC_SUBST([PKG_CPPFLAGS], ["${PKG_CPPFLAGS}"])
