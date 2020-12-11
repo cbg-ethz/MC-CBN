@@ -1,7 +1,7 @@
 Package: mccbn
 Type: Package
 Title: Large-scale inference of continuous time Conjunctive Bayesian Networks
-Version: 1.1.9
+Version: 2.1.0
 Date: 2016-11-19
 Authors@R:
     c(person(given = "Hesam", family = "Montazeri", role = c("aut", "cre"),
