@@ -66,7 +66,7 @@ In order to obtain MLE poset(network), we postprocess the output of _learn_netwo
 mle_index = which.max(fit$logliks)
 plot_poset(fit$posets[[mle_index]])
 ```
-### H-CBN
+### H-CBN2
 Now, we generate genotypes from the true CBN model, but in addition, we simulate noisy observations
 ```
 simGenotypes = sample_genotypes(N, true_poset, sampling_param = lambda_s, lambdas=lambdas, eps=0.01)
@@ -97,6 +97,32 @@ MC-CBN requires the following software:
 - OpenMP
 - Boost C++ library
 - (optional) Intel Math Kernel Library (MKL)
+
+and R-packages for Bioconductor:
+- graph
+- Rgraphviz
+
+```
+source("https://bioconductor.org/biocLite.R")
+biocLite("graph")
+biocLite("Rgraphviz")
+```
+
+To install MC-CBN, you can use the latest tarball release, e.g:
+```
+install.packages("https://github.com/cbg-ethz/MC-CBN/releases/download/v2.1.0/mccbn_2.1.0.tar.gz", repos=NULL)
+```
+
+To compile with MKL, necessary compiler and linker flags can be determined with the help of the Intel MKL [Link Line Advisor](https://software.intel.com/content/www/us/en/develop/tools/oneapi/components/onemkl/link-line-advisor.html), e.g.:
+
+```
+install.packages("https://github.com/cbg-ethz/MC-CBN/releases/download/v2.1.0/mccbn_2.1.0.tar.gz", repos=NULL,
+                 configure.args="--with-mklcxxflags=\"-DMKL_ILP64 -m64 -I${MKLROOT}/include\" --with-mklldflags=\"-Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_ilp64.a ${MKLROOT}/lib/intel64/libmkl_sequential.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl\"")
+```
+
+### Installation from source
+
+Requirements:
 - Autotools (Autoconf >= 2.69, Automake >= 1.15, m4)
 
 After cloning the repository, go to the corresponding directory and type:
@@ -111,7 +137,7 @@ R CMD build .
 R CMD INSTALL mccbn_<version>.tar.gz
 ```
 
-To compile with MKL, necessary compiler and linker flags can be determined with the help of the Intel MKL [Link Line Advisor](https://software.intel.com/content/www/us/en/develop/tools/oneapi/components/onemkl/link-line-advisor.html), e.g.:
+Once again to compile with MKL, the appropriate flags can be passed using `--configure-args`, e.g:
 
 ```
 R CMD build .
