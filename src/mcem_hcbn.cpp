@@ -678,12 +678,12 @@ double MCEM_hcbn(
       double aux = importance_sampling.w.sum();
       if (aux > 0) {
         /* Only consider observations with at least one feasible sample */
-        N_eff += 1;
+        N_eff += weights(i);
         int L_eff = L;
         if (sampling == "backward")
           L_eff = (importance_sampling.w.array() > 0).count();
-        obs_llhood += std::log(aux / L_eff);
-        expected_dist +=
+        obs_llhood += std::log(weights(i) * aux / L_eff);
+        expected_dist += weights(i) *
           importance_sampling.w.dot(importance_sampling.dist.cast<double>()) / aux;
         expected_Tdiff.row(i) =
           (importance_sampling.Tdiff.transpose() * importance_sampling.w) / aux;

@@ -71,8 +71,6 @@ MCEM.hcbn <- function(
   }
   if (is.null(weights))
     weights <- rep(1, N)
-  if (any(weights != 1))
-    warning("Weighted likelihood is not implemented yet!")
 
   if (update.step.size > max.iter)
     update.step.size <- as.integer(max.iter / 5)
