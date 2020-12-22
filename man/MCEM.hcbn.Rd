@@ -4,11 +4,25 @@
 \alias{MCEM.hcbn}
 \title{Monte Carlo Expectation Maximization}
 \usage{
-MCEM.hcbn(lambda, poset, obs, lambda.s = 1, L, eps = NULL,
+MCEM.hcbn(
+  lambda,
+  poset,
+  obs,
+  lambda.s = 1,
+  L,
+  eps = NULL,
   sampling = c("forward", "add-remove", "backward", "bernoulli", "pool"),
-  times = NULL, weights = NULL, max.iter = 100L, update.step.size = 20L,
-  tol = 0.001, max.lambda = 1e+06, neighborhood.dist = 1L, thrds = 1L,
-  verbose = FALSE, seed = NULL)
+  times = NULL,
+  weights = NULL,
+  max.iter = 100L,
+  update.step.size = 20L,
+  tol = 0.001,
+  max.lambda = 1e+06,
+  neighborhood.dist = 1L,
+  thrds = 1L,
+  verbose = FALSE,
+  seed = NULL
+)
 }
 \arguments{
 \item{lambda}{a vector containing initial values for the rate parameters}

@@ -4,11 +4,22 @@
 \alias{importance.weight}
 \title{Importance sampling}
 \usage{
-importance.weight(genotype, L, poset, lambda, eps, time = NULL,
+importance.weight(
+  genotype,
+  L,
+  poset,
+  lambda,
+  eps,
+  time = NULL,
   sampling = c("forward", "add-remove", "backward", "bernoulli", "pool"),
-  weight.remove = numeric(0), dist.pool = integer(0),
-  Tdiff.pool = matrix(0), neighborhood.dist = 1L, lambda.s = 1,
-  thrds = 1L, seed = NULL)
+  weight.remove = numeric(0),
+  dist.pool = integer(0),
+  Tdiff.pool = matrix(0),
+  neighborhood.dist = 1L,
+  lambda.s = 1,
+  thrds = 1L,
+  seed = NULL
+)
 }
 \arguments{
 \item{genotype}{either a binary vector or a matrix containing observations

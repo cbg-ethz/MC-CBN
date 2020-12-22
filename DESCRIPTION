@@ -14,6 +14,6 @@ License: GPL (>= 2)
 Imports: Rcpp (>= 0.11.3)
 LinkingTo: Rcpp, RcppArmadillo, RcppEigen
 Depends: igraph, foreach, R.utils, MASS, relations
-RoxygenNote: 6.0.1
+RoxygenNote: 7.1.1
 SystemRequirements: C++11
 NeedsCompilation: yes

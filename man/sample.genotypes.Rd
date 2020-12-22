@@ -4,8 +4,14 @@
 \alias{sample.genotypes}
 \title{Sample genotypes}
 \usage{
-sample.genotypes(N, poset, lambda, sampling.times = NULL, lambda.s = 1,
-  seed = NULL)
+sample.genotypes(
+  N,
+  poset,
+  lambda,
+  sampling.times = NULL,
+  lambda.s = 1,
+  seed = NULL
+)
 }
 \arguments{
 \item{N}{number of samples}

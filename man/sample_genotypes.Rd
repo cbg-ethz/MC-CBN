@@ -4,8 +4,14 @@
 \alias{sample_genotypes}
 \title{sample_timed_genotypes_with_eps}
 \usage{
-sample_genotypes(n, poset, sampling_param, lambdas,
-  sampling_fn = sampling.expo, eps = 0)
+sample_genotypes(
+  n,
+  poset,
+  sampling_param,
+  lambdas,
+  sampling_fn = sampling.expo,
+  eps = 0
+)
 }
 \description{
 sample_timed_genotypes_with_eps

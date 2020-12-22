@@ -4,9 +4,20 @@
 \alias{obs.loglikelihood}
 \title{Observed Log-Likelihood}
 \usage{
-obs.loglikelihood(obs, poset, lambda, eps, times = NULL, L,
+obs.loglikelihood(
+  obs,
+  poset,
+  lambda,
+  eps,
+  weights = NULL,
+  times = NULL,
+  L,
   sampling = c("forward", "add-remove", "backward", "bernoulli", "pool"),
-  neighborhood.dist = 1L, lambda.s = 1, thrds = 1L, seed = NULL)
+  neighborhood.dist = 1L,
+  lambda.s = 1,
+  thrds = 1L,
+  seed = NULL
+)
 }
 \arguments{
 \item{obs}{a matrix containing observations or genotypes, where each row
@@ -18,6 +29,8 @@ been observed (\code{1}) or not (\code{0})}
 \item{lambda}{a vector of the rate parameters}
 
 \item{eps}{error rate}
+
+\item{weights}{an optional vector containing observation weights}
 
 \item{times}{an optional vector of sampling times per observation}
 

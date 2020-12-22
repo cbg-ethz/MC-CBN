@@ -4,13 +4,30 @@
 \alias{adaptive.simulated.annealing}
 \title{Adaptive simulated annealing}
 \usage{
-adaptive.simulated.annealing(poset, obs, times = NULL, lambda.s = 1,
-  weights = NULL, L, sampling = c("forward", "add-remove", "backward",
-  "bernoulli", "pool"), max.iter = 100L, update.step.size = 20L,
-  tol = 0.001, max.lambda.val = 1e+06, T0 = 50, adap.rate = 0.3,
-  acceptance.rate = NULL, step.size = NULL, max.iter.asa = 10000L,
-  neighborhood.dist = 1L, adaptive = TRUE, outdir = NULL, thrds = 1L,
-  verbose = FALSE, seed = NULL)
+adaptive.simulated.annealing(
+  poset,
+  obs,
+  times = NULL,
+  lambda.s = 1,
+  weights = NULL,
+  L,
+  sampling = c("forward", "add-remove", "backward", "bernoulli", "pool"),
+  max.iter = 100L,
+  update.step.size = 20L,
+  tol = 0.001,
+  max.lambda.val = 1e+06,
+  T0 = 50,
+  adap.rate = 0.3,
+  acceptance.rate = NULL,
+  step.size = NULL,
+  max.iter.asa = 10000L,
+  neighborhood.dist = 1L,
+  adaptive = TRUE,
+  outdir = NULL,
+  thrds = 1L,
+  verbose = FALSE,
+  seed = NULL
+)
 }
 \arguments{
 \item{poset}{a matrix containing the cover relations}

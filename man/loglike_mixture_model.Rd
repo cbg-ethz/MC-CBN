@@ -4,9 +4,18 @@
 \alias{loglike_mixture_model}
 \title{loglike_mixture_model}
 \usage{
-loglike_mixture_model(poset, lambda, obs_events, sampling_times, weights,
-  nrOfSamples, compatible_geno, incomp_loglike, lambda_s,
-  sampling_times_available)
+loglike_mixture_model(
+  poset,
+  lambda,
+  obs_events,
+  sampling_times,
+  weights,
+  nrOfSamples,
+  compatible_geno,
+  incomp_loglike,
+  lambda_s,
+  sampling_times_available
+)
 }
 \description{
 loglike_mixture_model

@@ -4,8 +4,13 @@
 \alias{generate.genotypes}
 \title{Generate genotypes}
 \usage{
-generate.genotypes(mutation.times, poset, sampling.time = NULL,
-  lambda.s = 1, seed = NULL)
+generate.genotypes(
+  mutation.times,
+  poset,
+  sampling.time = NULL,
+  lambda.s = 1,
+  seed = NULL
+)
 }
 \arguments{
 \item{mutation.times}{a matrix of dimension (\code{n} x \code{p}), where
