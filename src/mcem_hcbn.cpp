@@ -236,9 +236,9 @@ MatrixXb generate_genotypes(
 //' Compute observed log-likelihood
 double obs_log_likelihood(
     const MatrixXb& obs, const MatrixXi& poset, const VectorXd& lambda,
-    const double eps, const VectorXd& times, const unsigned int L,
-    const std::string& sampling, const unsigned int neighborhood_dist,
-    Context& ctx, const float lambda_s=1.0,
+    const double eps, const RowVectorXd& weights, const VectorXd& times,
+    const unsigned int L, const std::string& sampling,
+    const unsigned int neighborhood_dist, Context& ctx, const float lambda_s=1.0,
     const bool sampling_times_available=false, const unsigned int thrds=1) {
 
   const auto p = poset.rows(); // Number of mutations / events
@@ -294,7 +294,7 @@ double obs_log_likelihood(
         Tdiff_pool, neighborhood_dist, (*rngs)[omp_get_thread_num()],
         sampling_times_available);
 
-      double aux = importance_sampling.w.sum();
+      double aux = weights(i) * importance_sampling.w.sum();
       if (aux > 0) {
         int L_eff = L;
         if (sampling == "backward")
@@ -747,9 +747,9 @@ RcppExport SEXP _complete_log_likelihood(
 
 RcppExport SEXP _obs_log_likelihood(
     SEXP obsSEXP, SEXP posetSEXP, SEXP lambdaSEXP, SEXP epsSEXP,
-    SEXP timesSEXP, SEXP LSEXP, SEXP samplingSEXP, SEXP neighborhood_distSEXP,
-    SEXP lambda_sSEXP, SEXP sampling_times_availableSEXP, SEXP thrdsSEXP,
-    SEXP seedSEXP) {
+    SEXP weightsSEXP, SEXP timesSEXP, SEXP LSEXP, SEXP samplingSEXP,
+    SEXP neighborhood_distSEXP, SEXP lambda_sSEXP,
+    SEXP sampling_times_availableSEXP, SEXP thrdsSEXP, SEXP seedSEXP) {
 
   using namespace Rcpp;
   try {
@@ -758,6 +758,7 @@ RcppExport SEXP _obs_log_likelihood(
     const MapMati poset(as<MapMati>(posetSEXP));
     const MapVecd lambda(as<MapVecd>(lambdaSEXP));
     const double eps = as<double>(epsSEXP);
+    const MapRowVecd weights(as<MapRowVecd>(weightsSEXP));
     const MapVecd times(as<MapVecd>(timesSEXP));
     const unsigned int L = as<unsigned int>(LSEXP);
     const std::string& sampling = as<std::string>(samplingSEXP);
@@ -770,8 +771,8 @@ RcppExport SEXP _obs_log_likelihood(
     // Call the underlying C++ function
     Context ctx(seed);
     double llhood = obs_log_likelihood(
-      obs, poset, lambda, eps, times, L, sampling, neighborhood_dist, ctx, lambda_s,
-      sampling_times_available, thrds);
+      obs, poset, lambda, eps, weights, times, L, sampling, neighborhood_dist,
+      ctx, lambda_s, sampling_times_available, thrds);
 
     // Return the result as a SEXP
     return wrap( llhood );
@@ -785,7 +786,7 @@ RcppExport SEXP _obs_log_likelihood(
 //' @param update_step_sizeSEXP Evaluate convergence of parameter every
 //' 'update_step_size' and increase number of samples, 'L', in order to reach a
 //' desirable 'tol'
-//' @param tolSEXP Convergence tolerance for rate paramenters
+//' @param tolSEXP Convergence tolerance for rate parameters
 RcppExport SEXP _MCEM_hcbn(
     SEXP ilambdaSEXP, SEXP posetSEXP, SEXP obsSEXP, SEXP timesSEXP,
     SEXP lambda_sSEXP, SEXP epsSEXP, SEXP weightsSEXP, SEXP LSEXP,

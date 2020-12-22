@@ -9,6 +9,7 @@
 #' @param poset a matrix containing the cover relations
 #' @param lambda a vector of the rate parameters
 #' @param eps error rate
+#' @param weights an optional vector containing observation weights
 #' @param times an optional vector of sampling times per observation
 #' @param L number of samples to be drawn from the proposal
 #' @param sampling sampling scheme to generate hidden genotypes, \code{X}.
@@ -22,7 +23,7 @@
 #' @param thrds number of threads for parallel execution
 #' @param seed seed for reproducibility
 obs.loglikelihood <- function(
-  obs, poset, lambda, eps, times=NULL, L,
+  obs, poset, lambda, eps, weights=NULL, times=NULL, L,
   sampling=c('forward', 'add-remove', 'backward', 'bernoulli', 'pool'),
   neighborhood.dist=1L, lambda.s=1.0, thrds=1L, seed=NULL) {
   
@@ -34,6 +35,9 @@ obs.loglikelihood <- function(
   if (!is.integer(obs))
     obs <- matrix(as.integer(obs), nrow=N, ncol=ncol(obs))
   
+  if (is.null(weights))
+    weights <- rep(1, N)
+
   if (is.null(times)) {
     times <- numeric(N)
     sampling.times.available <- FALSE
@@ -48,7 +52,7 @@ obs.loglikelihood <- function(
     seed <- sample.int(3e4, 1)
   
   .Call("_obs_log_likelihood", PACKAGE = 'mccbn', obs, poset, lambda, eps,
-        times, L, sampling, as.integer(neighborhood.dist), lambda.s,
+        weights, times, L, sampling, as.integer(neighborhood.dist), lambda.s,
         sampling.times.available, as.integer(thrds), as.integer(seed))
 }
 
