@@ -102,28 +102,30 @@ double log_bernoulli_process(const unsigned int dist, const double eps,
 //' Compute complete-data log-likelihood or (equivalently) hidden log-likelihood
 double complete_log_likelihood(const VectorXd& lambda, const double eps,
                                const MatrixXd& Tdiff, const VectorXd& dist,
-                               const float W, const bool internal) {
+                               const RowVectorXd& weights, const int internal) {
 
   const unsigned int p = lambda.size();
-  const unsigned int N = dist.size();
+  const double W = weights.sum();
   double llhood;
 
   switch(internal) {
   case(0):
-    llhood = N * lambda.array().log().sum() - (Tdiff * lambda).sum();
+    llhood = W * lambda.array().log().sum() - (weights * Tdiff).dot(lambda);
     break;
   case(1):
-    llhood = N * (lambda.array().log().sum() - p);
+    llhood = W * (lambda.array().log().sum() - p);
+    break;
   }
 
   if (eps == 0) {
-    for (unsigned int i = 0; i < N; ++i) {
+    for (unsigned int i = 0; i < dist.size(); ++i) {
       if (dist(i) != 0)
-        llhood += std::log(eps + DBL_EPSILON) * dist(i) +
-          std::log(1 - eps - DBL_EPSILON) * (p - dist(i));
+        llhood += std::log(eps + DBL_EPSILON) * weights(i) * dist(i) +
+          std::log(1 - eps - DBL_EPSILON) * weights(i) * (p - dist(i));
     }
   } else {
-    llhood += std::log(eps) * dist.sum() + std::log1p(- eps) * (p - dist.array()).sum();
+    VectorXd aux = p - dist.array();
+    llhood += std::log(eps) * weights.dot(dist) + std::log1p(- eps) * weights.dot(aux);
   }
   return llhood;
 }
@@ -723,7 +725,8 @@ double MCEM_hcbn(
 }
 
 RcppExport SEXP _complete_log_likelihood(
-    SEXP lambdaSEXP, SEXP epsSEXP, SEXP TdiffSEXP, SEXP distSEXP, SEXP WSEXP) {
+    SEXP lambdaSEXP, SEXP epsSEXP, SEXP TdiffSEXP, SEXP distSEXP,
+    SEXP weightsSEXP) {
 
   using namespace Rcpp;
   try {
@@ -732,10 +735,10 @@ RcppExport SEXP _complete_log_likelihood(
     double eps = as<double>(epsSEXP);
     const MapMatd Tdiff(as<MapMatd>(TdiffSEXP));
     const MapVecd dist(as<MapVecd>(distSEXP));
-    float W = as<float>(WSEXP);
+    const MapRowVecd weights(as<MapRowVecd>(weightsSEXP));
 
     // Call the underlying C++ function
-    double res = complete_log_likelihood(lambda, eps, Tdiff, dist, W, false);
+    double res = complete_log_likelihood(lambda, eps, Tdiff, dist, weights, 0);
 
     // Return the result as a SEXP
     return wrap( res );

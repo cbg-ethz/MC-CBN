@@ -4,7 +4,7 @@
 \alias{complete.loglikelihood}
 \title{Complete-data Log-Likelihood}
 \usage{
-complete.loglikelihood(lambda, eps, Tdiff, dist, W = NULL)
+complete.loglikelihood(lambda, eps, Tdiff, dist, weights = NULL)
 }
 \arguments{
 \item{lambda}{a vector of the rate parameters}
@@ -15,7 +15,7 @@ complete.loglikelihood(lambda, eps, Tdiff, dist, W = NULL)
 
 \item{dist}{a vector of expected Hamming distances}
 
-\item{W}{sum of weighted observations}
+\item{weights}{an optional vector containing observation weights}
 }
 \description{
 compute the complete-data log-likelihood or, equivalently, the

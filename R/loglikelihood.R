@@ -66,12 +66,17 @@ obs.loglikelihood <- function(
 #' @param eps error rate, \eqn{\epsilon}
 #' @param Tdiff a matrix of expected time differences
 #' @param dist a vector of expected Hamming distances
-#' @param W sum of weighted observations
-complete.loglikelihood <- function(lambda, eps, Tdiff, dist, W=NULL) {
+#' @param weights an optional vector containing observation weights
+complete.loglikelihood <- function(lambda, eps, Tdiff, dist, weights=NULL) {
   
-  if (is.null(W))
-    W <- length(Tdiff)
+  if (is.null(weights)) {
+    weights <- rep(1, length(dist))
+  } else if (length(weights) != length(dist)) {
+    warning(paste("Length of the weights vector does not agree with the number",
+                  " of observations. Setting weights to 1"))
+    weights <- rep(1, length(dist))
+  }
   
   .Call('_complete_log_likelihood', PACKAGE = 'mccbn', lambda, eps, Tdiff, dist,
-        W)
+        weights)
 }
