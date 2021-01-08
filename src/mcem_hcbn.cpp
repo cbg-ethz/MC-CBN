@@ -296,12 +296,12 @@ double obs_log_likelihood(
         Tdiff_pool, neighborhood_dist, (*rngs)[omp_get_thread_num()],
         sampling_times_available);
 
-      double aux = weights(i) * importance_sampling.w.sum();
+      double aux = importance_sampling.w.sum();
       if (aux > 0) {
         int L_eff = L;
         if (sampling == "backward")
           L_eff = (importance_sampling.w.array() > 0).count();
-        llhood += std::log(aux / L_eff);
+        llhood += weights(i) * std::log(aux / L_eff);
       }
     }
   }
@@ -574,7 +574,7 @@ double MCEM_hcbn(
   // Initialization and instantiation of variables
   const vertices_size_type p = model.size(); // Number of mutations / events
   const unsigned int N = obs.rows();         // Number of observations / genotypes
-  unsigned int N_eff = 0;
+  double N_eff = 0.0;
   unsigned int K = 0;
   unsigned int update_step_size = control_EM.update_step_size;
   VectorXd avg_lambda = VectorXd::Zero(p);
@@ -684,7 +684,7 @@ double MCEM_hcbn(
         int L_eff = L;
         if (sampling == "backward")
           L_eff = (importance_sampling.w.array() > 0).count();
-        obs_llhood += std::log(weights(i) * aux / L_eff);
+        obs_llhood += weights(i) * std::log(aux / L_eff);
         expected_dist += weights(i) *
           importance_sampling.w.dot(importance_sampling.dist.cast<double>()) / aux;
         expected_Tdiff.row(i) =
