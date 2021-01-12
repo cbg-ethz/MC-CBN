@@ -94,7 +94,7 @@ adaptive.simulated.annealing <- function(
   }
   
   if (is.null(step.size))
-    step.size <- floor(max.iter/10)
+    step.size <- floor(max.iter.asa/10)
 
   if (is.null(outdir))
     outdir <- file.path(getwd(), "")
