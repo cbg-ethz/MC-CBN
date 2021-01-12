@@ -49,7 +49,8 @@ all_genotype_prob_for_empty_poset <- function(lambda, obs_events, sampling_times
   probs
 }
 
-
+#' Probability of a genotype given a poset and rate parameters, i.e. lambda
+#' @export
 genotype_probability_fast <- function(poset, lambda, genotype, time, nrOfSamples=100, lambda_s = 1.0, sampling_time_available=TRUE, topo_path=NULL) {
   
   if(is.null(topo_path) ) {

@@ -56,6 +56,18 @@ const std::string& ControlSA::get_outdir() const{
   return _outdir;
 }
 
+void write_poset(const Poset& poset, const std::string& outdir) {
+  std::ofstream outfile_poset;
+  outfile_poset.open(outdir + "poset.txt", std::ofstream::trunc);
+  boost::graph_traits<Poset>::edge_iterator ei, ei_end;
+  for (boost::tie(ei, ei_end) = boost::edges(poset); ei != ei_end; ++ei)
+    outfile_poset << boost::get(
+        boost::get(&Event::event_id, poset), source(*ei, poset))
+    << "\t" << boost::get(
+        boost::get(&Event::event_id, poset), target(*ei, poset))
+    << std::endl;
+  outfile_poset.close();
+}
 
 void initialize_lambda(Model& model, const MatrixXb& obs, const float max_lambda) {
 
@@ -510,9 +522,6 @@ double simulated_annealing(
   outfile << "step\t llhood\t epsilon\t lambdas" << std::endl;
   outfile << 0 << "\t" << llhood << "\t" << poset.get_epsilon() << "\t"
           << poset.get_lambda().transpose() << std::endl;
-  
-  std::ofstream outfile_poset;
-  outfile_poset.open(control_ASA.get_outdir() + "poset.txt");
 
   for (unsigned int iter = 1; iter < control_ASA.get_max_iter(); ++iter) {
     if (ctx.get_verbose())
@@ -528,13 +537,7 @@ double simulated_annealing(
     if (llhood > llhood_ML) {
       llhood_ML = llhood;
       poset_ML = poset;
-      boost::graph_traits<Poset>::edge_iterator ei, ei_end;
-      for (boost::tie(ei, ei_end) = boost::edges(poset.poset); ei != ei_end; ++ei)
-        outfile_poset << boost::get(
-            boost::get(&Event::event_id, poset.poset), source(*ei, poset.poset))
-                      << "\t" << boost::get(
-            boost::get(&Event::event_id, poset.poset), target(*ei, poset.poset))
-                      << std::endl;
+      write_poset(poset.poset, control_ASA.get_outdir());
     }
 
     if (ctx.get_verbose())
