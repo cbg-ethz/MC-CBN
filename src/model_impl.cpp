@@ -11,6 +11,7 @@
 #include <boost/graph/strong_components.hpp>
 #include <boost/graph/topological_sort.hpp>
 #include <boost/graph/transitive_closure.hpp>
+#include <boost/bind/placeholders.hpp>
 #include <vector>
 #include <cmath>
 
