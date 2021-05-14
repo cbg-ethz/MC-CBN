@@ -85,7 +85,7 @@ posets = candidate_posets(simGenotypes$obs_events, rep(1, N), 0.9)
 poset0 = posets[[length(posets)]]
 
 fit = adaptive.simulated.annealing(poset0, simGenotypes$obs_events, L=100,
-				   max.iter.asa=10)
+				   max.iter.asa=10, seed=10L)
 ```
 
 ## Installation
