@@ -95,7 +95,6 @@ fit = adaptive.simulated.annealing(poset0, simGenotypes$obs_events, L=100,
 MC-CBN requires the following software:
 
 - OpenMP
-- Boost C++ library
 - (optional) Intel Math Kernel Library (MKL)
 
 and R-packages for Bioconductor:
@@ -143,6 +142,9 @@ Once again to compile with MKL, the appropriate flags can be passed using `--con
 R CMD build .
 R CMD INSTALL mccbn_<version>.tar.gz --configure-args="--with-mklcxxflags=\"-DMKL_ILP64 -m64 -I${MKLROOT}/include\" --with-mklldflags=\"-Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_ilp64.a ${MKLROOT}/lib/intel64/libmkl_sequential.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl\""
 ```
+
+**NOTE:** Installation of dependencies might not work with `R CMD INSTALL`. After creating the `tar.gz` file with `R CMD build .`, one could install the package within R using e.g. `install.pacakages("mccbn_<version>.tar.gz", repos=NULL)` or using the`devtools` package.
+
 ### Contributions
 - [Hesam Montazeri](https://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=168604)
 - [Susana Posada Cespedes](https://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=192769)
