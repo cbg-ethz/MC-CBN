@@ -72,7 +72,6 @@ mccbn_LDLIBS="${mccbn_LDLIBS} $RLAPACK $RFORT"
 
 # Other dependencies
 AC_OPENMP
-AX_BOOST_BASE([1.59.0], [], [AC_MSG_ERROR([did not find the boost headers])])
 AC_ARG_WITH([mklcxxflags],
   [AS_HELP_STRING([--with-mklcxxflags=ARGS], [Compiler flags for Intel MKL (optional)])],
   [], [with_mklcxxflags=no])
@@ -112,9 +111,8 @@ AC_MSG_RESULT([
 	CXX:            ${CXX}
 	CXXFLAGS:       ${CXXFLAGS} ${OPENMP_CXXFLAGS}
 	CPPFLAGS:       ${CPPFLAGS} ${mccbn_CPPFLAGS} ${PKG_CPPFLAGS}
-	Boost_CPPFLAGS: ${BOOST_CPPFLAGS}
-  MKL_CXXFLAGS:   ${MKL_CXXFLAGS}
+    MKL_CXXFLAGS:   ${MKL_CXXFLAGS}
 
-	LIBS:           ${PKG_LIBS} ${mccbn_LDLIBS} ${BOOST_LDFLAGS}
+	LIBS:           ${PKG_LIBS} ${mccbn_LDLIBS}
 	MKL_LDFLAGS:    ${MKL_LDFLAGS}
 ])
