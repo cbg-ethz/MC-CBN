@@ -121,10 +121,12 @@ public:
 
   void set_lambda(const Eigen::Ref<const VectorXd>& lambda);
 
-  void set_lambda(const Eigen::Ref<const VectorXd>& lambda,
-                  const float max_lambda);
+  void update_lambda(const Eigen::Ref<const VectorXd>& lambda,
+                     const float max_lambda);
 
   void set_epsilon(const double eps);
+
+  void update_epsilon(const double eps, const double min_eps);
 
   void set_llhood(const double llhood);
 

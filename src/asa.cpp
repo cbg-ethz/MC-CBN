@@ -125,7 +125,7 @@ void initialize_lambda(Model& model, const MatrixXb& obs, const float max_lambda
     float aux = mutated / count;
     lambda[model.poset[*v].event_id] = aux * model.get_lambda_s() / (1.0 - aux);
   }
-  model.set_lambda(lambda, max_lambda);
+  model.update_lambda(lambda, max_lambda);
 }
 
 //' Heuristic based on the fraction of compatible observations with the
@@ -254,7 +254,8 @@ double propose_edge(
     if (llhood_addRemove(v1, v2) == 0.0) {
       /* Initialization */
       initialize_lambda(M_new, obs, control_EM.max_lambda);
-      M_new.set_epsilon((double) num_incompatible_events(obs, M_new) / (N * p));
+      M_new.update_epsilon((double) num_incompatible_events(obs, M_new) / (N * p),
+              std::numeric_limits<double>::epsilon());
 
       /* Compute likelihood of the proposed/new poset */
       llhood_new = MCEM_hcbn(
@@ -306,7 +307,8 @@ double propose_edge(
 
     /* Initialization */
     initialize_lambda(M_new, obs, control_EM.max_lambda);
-    M_new.set_epsilon((double) num_incompatible_events(obs, M_new) / (N * p));
+    M_new.update_epsilon((double) num_incompatible_events(obs, M_new) / (N * p),
+            std::numeric_limits<double>::epsilon());
 
     /* Compute likelihood of the proposed/new poset */
     llhood_new = MCEM_hcbn(
@@ -372,7 +374,8 @@ double propose_edge(
     if (llhood_preserve(v1, v2) == 0.0) {
       /* Initialization */
       initialize_lambda(M_new, obs, control_EM.max_lambda);
-      M_new.set_epsilon((double) num_incompatible_events(obs, M_new) / (N * p));
+      M_new.update_epsilon((double) num_incompatible_events(obs, M_new) / (N * p),
+              std::numeric_limits<double>::epsilon());
 
       /* Compute likelihood of the proposed/new poset */
       llhood_new = MCEM_hcbn(
@@ -415,7 +418,8 @@ double propose_edge(
     if (llhood_swap(v1, v2) == 0.0) {
       /* Initialization */
       initialize_lambda(M_new, obs, control_EM.max_lambda);
-      M_new.set_epsilon((double) num_incompatible_events(obs, M_new) / (N * p));
+      M_new.update_epsilon((double) num_incompatible_events(obs, M_new) / (N * p),
+              std::numeric_limits<double>::epsilon());
 
       /* Compute likelihood of the proposed/new poset */
       llhood_new = MCEM_hcbn(
@@ -634,7 +638,8 @@ RcppExport SEXP _adaptive_simulated_annealing(
 
     /* Initialization */
     initialize_lambda(M, obs, max_lambda);
-    M.set_epsilon((double) num_incompatible_events(obs, M) / (obs.rows() * p));
+    M.update_epsilon((double) num_incompatible_events(obs, M) / (obs.rows() * p),
+            std::numeric_limits<double>::epsilon());
 
     ControlEM control_EM(max_iter_EM, update_step_size, tol, max_lambda,
                          neighborhood_dist);

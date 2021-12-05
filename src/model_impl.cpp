@@ -18,7 +18,7 @@ void Model::set_lambda(const Eigen::Ref<const VectorXd>& lambda) {
   _lambda = lambda;
 }
 
-void Model::set_lambda(const Eigen::Ref<const VectorXd>& lambda, const float max_lambda) {
+void Model::update_lambda(const Eigen::Ref<const VectorXd>& lambda, const float max_lambda) {
   _lambda = lambda;
   for (unsigned int j = 0; j < lambda.size(); ++j)
     if (lambda[j] > max_lambda || !std::isfinite(lambda[j]))
@@ -27,6 +27,10 @@ void Model::set_lambda(const Eigen::Ref<const VectorXd>& lambda, const float max
 
 void Model::set_epsilon(const double eps) {
   _epsilon = eps;
+}
+
+void Model::update_epsilon(const double eps, const double min_eps) {
+  _epsilon = std::max(std::min(eps, 1 - min_eps),  min_eps);
 }
 
 void Model::set_llhood(const double llhood) {

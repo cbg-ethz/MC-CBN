@@ -66,8 +66,8 @@ VectorXd log_bernoulli_process(const VectorXd& dist, const double eps,
      */
     for (unsigned int i = 0; i < L; ++i) {
       if (dist[i] != 0) {
-        double log_eps = std::log(eps + DBL_EPSILON);
-        double log1m_eps = std::log1p(- eps - DBL_EPSILON);
+        double log_eps = std::log(eps + std::numeric_limits<double>::epsilon());
+        double log1m_eps = std::log1p(- eps - std::numeric_limits<double>::epsilon());
         log_prob[i] = log_eps * dist[i] + log1m_eps * (p - dist[i]);
       } else {
         log_prob[i] = 0;
@@ -91,8 +91,8 @@ double log_bernoulli_process(const unsigned int dist, const double eps,
     * well as dist.
     */
     if (dist != 0)
-      log_prob = std::log(eps + DBL_EPSILON) * dist +
-        std::log1p(- eps - DBL_EPSILON) * (p - dist);
+      log_prob = std::log(eps + std::numeric_limits<double>::epsilon()) * dist +
+        std::log1p(- eps - std::numeric_limits<double>::epsilon()) * (p - dist);
   } else {
     log_prob = std::log(eps) * dist + std::log1p(-eps) * (p - dist);
   }
@@ -106,7 +106,7 @@ double complete_log_likelihood(const VectorXd& lambda, const double eps,
 
   const unsigned int p = lambda.size();
   const double W = weights.sum();
-  double llhood;
+  double llhood = 0;
 
   switch(internal) {
   case(0):
@@ -120,8 +120,8 @@ double complete_log_likelihood(const VectorXd& lambda, const double eps,
   if (eps == 0) {
     for (unsigned int i = 0; i < dist.size(); ++i) {
       if (dist(i) != 0)
-        llhood += std::log(eps + DBL_EPSILON) * weights(i) * dist(i) +
-          std::log(1 - eps - DBL_EPSILON) * weights(i) * (p - dist(i));
+        llhood += std::log(eps + std::numeric_limits<double>::epsilon()) * weights(i) * dist(i) +
+          std::log(1 - eps - std::numeric_limits<double>::epsilon()) * weights(i) * (p - dist(i));
     }
   } else {
     VectorXd aux = p - dist.array();
@@ -302,6 +302,9 @@ double obs_log_likelihood(
         if (sampling == "backward")
           L_eff = (importance_sampling.w.array() > 0).count();
         llhood += weights(i) * std::log(aux / L_eff);
+      } else {
+          throw std::runtime_error(
+              "ERROR: all samples have weight 0. Consider increasing L");
       }
     }
   }
@@ -689,13 +692,21 @@ double MCEM_hcbn(
           importance_sampling.w.dot(importance_sampling.dist.cast<double>()) / aux;
         expected_Tdiff.row(i) =
           (importance_sampling.Tdiff.transpose() * importance_sampling.w) / aux;
+      } else {
+          /* Alternative: add a large negative number to obs_llhood? */
+          throw std::runtime_error(
+              "ERROR: all samples have weight 0. Consider increasing L");
       }
     }
 
     /* M-step */
-    model.set_epsilon(expected_dist / (N_eff * p));
+    /* NOTE: if the real error rate is believed to be smaller than
+    * approx. 2.22e-16, the boundaries might not suitable and an even
+    * smaller value could be considered for clamping the eps
+    */
+    model.update_epsilon(expected_dist / (N_eff * p), std::numeric_limits<double>::epsilon());
     Tdiff_colsum = weights * expected_Tdiff;
-    model.set_lambda((Tdiff_colsum / N_eff).array().inverse(), control_EM.max_lambda);
+    model.update_lambda((Tdiff_colsum / N_eff).array().inverse(), control_EM.max_lambda);
 
     avg_lambda_current +=  model.get_lambda();
     avg_eps_current += model.get_epsilon();
@@ -823,7 +834,11 @@ RcppExport SEXP _MCEM_hcbn(
     const auto p = poset.rows(); // Number of mutations / events
     edge_container edge_list = adjacency_mat2list(poset);
     Model M(edge_list, p, lambda_s);
-    M.set_lambda(ilambda, max_lambda);
+    M.update_lambda(ilambda, max_lambda);
+    /* NOTE: if the real error rate is believed to be smaller than
+    * approx. 2.22e-16, the boundaries might not suitable and an even
+    * smaller value could be considered for clamping the eps
+    */
     M.set_epsilon(eps);
     M.has_cycles();
     if (M.cycle)
