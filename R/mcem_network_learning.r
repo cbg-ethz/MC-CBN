@@ -131,7 +131,7 @@ learn_network_internal <- function(obs_events, sampling_times, max_iter=200, zet
     # max log_likehood of the previous posets is higher than the current log_likehood(incomp), the 
     # log_likehood of the current poset will only get smaller, so the inference is not performed 
     # (time consuming). Unless required for recording the alpha vs. log_likelihood
-    if (i > 1 && (max_loglike >  loglike_incompatible) && !exhaustive_comp_loglik) {
+    if (i > 1 && (max_loglike >  loglike_incompatible$ll) && !exhaustive_comp_loglik) {
       cur_loglik = loglike_incompatible
       if(verbose==TRUE) {
         print("No parameter estimation for this poset. Upper bound likelihood of this poset is",  
