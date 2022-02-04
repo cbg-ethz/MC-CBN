@@ -11,9 +11,8 @@ Authors@R:
 Maintainer: Hesam Montazeri <hesam.montazeri@bsse.ethz.ch>
 Description: MC-CBN performs large-scale inference on conjunctive Bayesian networks using genetic data. Sequencing times can also be given
 License: GPL (>= 2)
-Imports: Rcpp (>= 0.11.3)
+Imports: igraph, foreach, R.utils, MASS, relations, Rcpp (>= 0.11.3)
 LinkingTo: Rcpp, RcppArmadillo, RcppEigen
-Depends: igraph, foreach, R.utils, MASS, relations
 RoxygenNote: 7.1.1
 SystemRequirements: C++11
 NeedsCompilation: yes
