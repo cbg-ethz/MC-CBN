@@ -94,7 +94,7 @@ fit = adaptive.simulated.annealing(poset0, simGenotypes$obs_events, L=100,
 
 MC-CBN requires the following software:
 
-- OpenMP
+- C++ compiler with support for c++11 and OpenMP
 - Boost C++ library
 - (optional) Intel Math Kernel Library (MKL)
 
@@ -103,15 +103,17 @@ and R-packages for Bioconductor:
 - Rgraphviz
 
 ```
-source("https://bioconductor.org/biocLite.R")
-biocLite("graph")
-biocLite("Rgraphviz")
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install(version="3.16")
+BiocManager::install(c("graph", "Rgraphviz"))
 ```
 
 To install MC-CBN, you can use the latest tarball release, e.g:
 ```
 install.packages("https://github.com/cbg-ethz/MC-CBN/releases/download/v2.1.0/mccbn_2.1.0.tar.gz", repos=NULL)
 ```
+
 
 To compile with MKL, necessary compiler and linker flags can be determined with the help of the Intel MKL [Link Line Advisor](https://software.intel.com/content/www/us/en/develop/tools/oneapi/components/onemkl/link-line-advisor.html), e.g.:
 
@@ -123,18 +125,24 @@ install.packages("https://github.com/cbg-ethz/MC-CBN/releases/download/v2.1.0/mc
 ### Installation from source
 
 Requirements:
-- Autotools (Autoconf >= 2.69, Automake >= 1.15, m4)
+- Autotools (Autoconf >= 2.69, Automake >= 1.15, Automake-archive)
+- R-package `remotes`
 
 After cloning the repository, go to the corresponding directory and type:
 
 ```
-autoreconf -vif -I m4
+autoreconf -vif
 ```
 
-Then build and install the package:
+Then build the package:
 ```
 R CMD build .
-R CMD INSTALL mccbn_<version>.tar.gz
+````
+
+Finally, install the package and other dependencies using R-package `remotes`:
+```
+install.packages("remotes")
+remotes::install_local("mccbn_<version>.tar.gz", dependencies=TRUE)
 ```
 
 Once again to compile with MKL, the appropriate flags can be passed using `--configure-args`, e.g:
