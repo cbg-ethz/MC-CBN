@@ -133,9 +133,9 @@ std::vector<node_container> Model::get_direct_successors(node_container& topo_or
     std::sort(successors[*v_begin].begin(), successors[*v_begin].end(),
               boost::bind(std::less<vertices_size_type>(),
                           boost::bind(
-                            boost::detail::subscript(topo_order), _1),
+                            boost::detail::subscript(topo_order), boost::placeholders::_1),
                             boost::bind(
-                              boost::detail::subscript(topo_order), _2)));
+                              boost::detail::subscript(topo_order), boost::placeholders::_2)));
   }
   return successors;
 }
