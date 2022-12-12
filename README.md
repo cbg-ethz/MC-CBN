@@ -95,7 +95,7 @@ fit = adaptive.simulated.annealing(poset0, simGenotypes$obs_events, L=100,
 MC-CBN requires the following software:
 
 - C++ compiler with support for c++11 and OpenMP
-- Boost C++ library
+- Boost C++ library (tested with version 1.74.0)
 - (optional) Intel Math Kernel Library (MKL)
 
 and R-packages for Bioconductor:
@@ -109,17 +109,18 @@ BiocManager::install(version="3.16")
 BiocManager::install(c("graph", "Rgraphviz"))
 ```
 
-To install MC-CBN, you can use the latest tarball release, e.g:
+To install MC-CBN, you can use the latest tarball release, as well as R-package `remotes` to install dependencies, e.g:
 ```
-install.packages("https://github.com/cbg-ethz/MC-CBN/releases/download/v2.1.0/mccbn_2.1.0.tar.gz", repos=NULL)
+install.packages("remotes")
+remotes::install_url("https://github.com/cbg-ethz/MC-CBN/releases/download/v2.1.0/mccbn_2.1.0.tar.gz", dependencies=TRUE)
 ```
 
 
 To compile with MKL, necessary compiler and linker flags can be determined with the help of the Intel MKL [Link Line Advisor](https://software.intel.com/content/www/us/en/develop/tools/oneapi/components/onemkl/link-line-advisor.html), e.g.:
 
 ```
-install.packages("https://github.com/cbg-ethz/MC-CBN/releases/download/v2.1.0/mccbn_2.1.0.tar.gz", repos=NULL,
-                 configure.args="--with-mklcxxflags=\"-DMKL_ILP64 -m64 -I${MKLROOT}/include\" --with-mklldflags=\"-Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_ilp64.a ${MKLROOT}/lib/intel64/libmkl_sequential.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl\"")
+remotes::install_url("https://github.com/cbg-ethz/MC-CBN/releases/download/v2.1.0/mccbn_2.1.0.tar.gz", dependencies=TRUE,
+                     configure.args="--with-mklcxxflags=\"-DMKL_ILP64 -m64 -I${MKLROOT}/include\" --with-mklldflags=\"-Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_ilp64.a ${MKLROOT}/lib/intel64/libmkl_sequential.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl\"")
 ```
 
 ### Installation from source
@@ -148,9 +149,10 @@ remotes::install_local("mccbn_<version>.tar.gz", dependencies=TRUE)
 Once again to compile with MKL, the appropriate flags can be passed using `--configure-args`, e.g:
 
 ```
-R CMD build .
-R CMD INSTALL mccbn_<version>.tar.gz --configure-args="--with-mklcxxflags=\"-DMKL_ILP64 -m64 -I${MKLROOT}/include\" --with-mklldflags=\"-Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_ilp64.a ${MKLROOT}/lib/intel64/libmkl_sequential.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl\""
+remotes::install_local("mccbn_<version>.tar.gz", dependencies=TRUE,
+                       configure.args="--with-mklcxxflags=\"-DMKL_ILP64 -m64 -I${MKLROOT}/include\" --with-mklldflags=\"-Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_ilp64.a ${MKLROOT}/lib/intel64/libmkl_sequential.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl\"")
 ```
+
 ### Contributions
 - [Hesam Montazeri](https://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=168604)
 - [Susana Posada Cespedes](https://www.bsse.ethz.ch/cbg/group/people/person-detail.html?persid=192769)
@@ -158,6 +160,6 @@ R CMD INSTALL mccbn_<version>.tar.gz --configure-args="--with-mklcxxflags=\"-DMK
 
 ### Contact
 ```
-Hesam Montazeri
-hesam.montazeri (at) bsse.ethz.ch
+Susana Posada Cespedes
+susana.posada (at) bsse.ethz.ch
 ```
